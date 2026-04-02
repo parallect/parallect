@@ -15,6 +15,54 @@ from parallect.providers import ProviderResult
 from parallect.providers.base import AsyncResearchProvider
 
 
+def _try_sign_bundle(bundle: BundleData, settings: object) -> BundleData:
+    """Attempt to sign bundle attestations using the local key.
+
+    Creates a bundle-level attestation, signs it, and attaches it to the bundle.
+    Returns the bundle (mutated with attestations) if signing succeeds,
+    or the original bundle if no key is available.
+    """
+    from prx_spec.attestation.keys import load_private_key, get_key_id, DEFAULT_KEY_DIR
+    from prx_spec.attestation.signing import sign_attestation, compute_file_hash
+    from prx_spec.models.attestation_models import Attestation, Signer, Subject
+
+    key_path_str = getattr(settings, "key_path", "")
+    identity = getattr(settings, "identity", "") or "anonymous"
+    key_dir = Path(key_path_str) if key_path_str else DEFAULT_KEY_DIR
+
+    try:
+        signing_key = load_private_key(key_dir)
+    except Exception:
+        return bundle
+
+    verify_key = signing_key.verify_key
+    key_id = get_key_id(verify_key)
+
+    # Build a bundle-level attestation
+    import json
+    manifest_json = bundle.manifest.model_dump_json(exclude_none=True)
+    manifest_hash = compute_file_hash(manifest_json.encode("utf-8"))
+
+    attestation = Attestation(
+        version="1.0",
+        type="bundle",
+        signer=Signer(
+            type="researcher",
+            identity=identity,
+            key_id=key_id,
+            public_key_url=f"local://{key_dir / 'prx_signing.pub'}",
+        ),
+        subject=Subject(
+            file="manifest.json",
+            sha256=manifest_hash,
+        ),
+    )
+
+    signed = sign_attestation(attestation, signing_key)
+    bundle.attestations[f"attestations/bundle.researcher.{key_id}.sig.json"] = signed
+    return bundle
+
+
 @dataclass
 class ProviderOutcome:
     """Outcome of a single provider call (success or failure)."""
@@ -66,18 +114,30 @@ async def research(
     no_synthesis: bool = False,
     parent_bundle_id: str | None = None,
     parent_context: str | None = None,
+    no_sign: bool = False,
+    settings: object | None = None,
 ) -> BundleData:
     """High-level research: fan out, collect, optionally synthesize, write .prx.
 
     This is the primary entry point for both the CLI and programmatic use.
     """
     from parallect.orchestrator.budget import BudgetEstimator
+    from parallect.plugins import PluginManager
+
+    # Initialize plugins
+    plugin_mgr = PluginManager()
+    plugin_mgr.discover_entry_points()
 
     # Budget check
     if budget_cap_usd is not None:
         estimator = BudgetEstimator()
         estimate = estimator.estimate(query, providers)
         estimator.check_cap(estimate, budget_cap_usd)
+
+    # Hook: pre_research (may modify query)
+    query = await plugin_mgr.run_pre_research(
+        query, [p.name for p in providers]
+    )
 
     # Fan out to all providers (augment query with parent context if continuing)
     effective_query = query
@@ -96,6 +156,10 @@ async def research(
 
     for outcome in outcomes:
         if outcome.result and outcome.result.status != "failed":
+            # Hook: post_provider
+            outcome.result = await plugin_mgr.run_post_provider(
+                outcome.provider, outcome.result
+            )
             pd = ProviderData(name=outcome.provider, report_md=outcome.result.report_markdown)
             provider_data.append(pd)
             providers_used.append(outcome.provider)
@@ -124,6 +188,8 @@ async def research(
             has_synthesis = True
             if synth_result.cost_usd:
                 total_cost += synth_result.cost_usd
+            # Hook: post_synthesis
+            synthesis_md = await plugin_mgr.run_post_synthesis(synthesis_md)
         except Exception:
             # Synthesis failure is non-fatal
             pass
@@ -151,6 +217,13 @@ async def research(
         providers=provider_data,
         synthesis_md=synthesis_md,
     )
+
+    # Hook: post_bundle
+    bundle = await plugin_mgr.run_post_bundle(bundle)
+
+    # Auto-sign if settings allow and key is available
+    if not no_sign and settings and getattr(settings, "auto_sign", False):
+        bundle = _try_sign_bundle(bundle, settings)
 
     # Write to disk if output path given
     if output:

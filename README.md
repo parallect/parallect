@@ -4,7 +4,7 @@ Open-source multi-provider AI deep research from the command line. Bring your ow
 
 Fan out research queries to multiple frontier AI providers (Perplexity, Gemini, OpenAI, Grok, Anthropic) in parallel, then synthesize their outputs into a single unified report with cross-referenced citations, claim extraction, and confidence scoring.
 
-Output is a `.prx` bundle — an open, portable research format defined by [prx-spec](https://github.com/parallect-ai/prx-spec).
+Output is a `.prx` bundle — an open, portable research format defined by [prx-spec](https://github.com/parallect/prx-spec).
 
 ## Install
 
@@ -44,6 +44,36 @@ parallect continue output.prx "What about practical applications?"
 | Anthropic | claude-sonnet-4 | claude-opus-4 | `PARALLECT_ANTHROPIC_API_KEY` |
 | Grok | grok-3 | grok-4 | `PARALLECT_XAI_API_KEY` |
 | Ollama | llama3.2 | — | (local) |
+| LM Studio | default | — | (local) |
+| LDR | llama3.2 | — | (local, `pip install "parallect[ldr]"`) |
+
+## Plugins
+
+Parallect supports plugins that hook into the research pipeline (`pre_research`, `post_provider`, `post_synthesis`, `post_bundle`). Plugins are discovered via Python entry points.
+
+Local Deep Research (LDR) is included as an optional plugin:
+
+```bash
+pip install "parallect[ldr]"
+parallect research "my query" -p ldr
+```
+
+See [docs/PLUGINS.md](docs/PLUGINS.md) for details on writing custom plugins.
+
+## Bundle Signing
+
+Bundles are automatically signed with Ed25519 when a local key exists. Use the `prx keys generate` command from the [prx](https://github.com/parallect/prx) toolkit to create a key pair:
+
+```bash
+# Generate a signing key (one-time, requires prx)
+prx keys generate
+
+# Research auto-signs by default
+parallect research "my query" -o signed.prx
+
+# Skip signing
+parallect research "my query" --no-sign
+```
 
 ## Output Format
 
@@ -54,7 +84,14 @@ Research results are saved as `.prx` bundles — portable ZIP archives containin
 - `synthesis.md` — unified cross-provider synthesis
 - `claims.json` — extracted atomic claims with provider attribution
 
-Use the [prx](https://github.com/parallect-ai/prx) CLI to read, validate, merge, and share bundles.
+Use the [prx](https://github.com/parallect/prx) CLI to read, validate, merge, and share bundles.
+
+## Documentation
+
+- [Quickstart Guide](docs/QUICKSTART.md) — Get running in 5 minutes
+- [Provider Guide](docs/PROVIDERS.md) — Write a custom provider adapter
+- [Plugin Guide](docs/PLUGINS.md) — Hook into the research pipeline
+- [Architecture](docs/ARCHITECTURE.md) — How the orchestrator works
 
 ## License
 
