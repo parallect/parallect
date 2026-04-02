@@ -117,6 +117,8 @@ async def _research_async(
             budget_cap_usd=budget_cap,
             timeout_per_provider=timeout,
             output=out_path,
+            no_sign=no_sign,
+            settings=settings,
         )
 
         progress.update(task, description="Done!")
@@ -124,6 +126,8 @@ async def _research_async(
     console.print(f"\n[green]Bundle created:[/green] {bundle.manifest.id}")
     console.print(f"  Providers: {', '.join(bundle.manifest.providers_used)}")
     console.print(f"  Synthesis: {'yes' if bundle.manifest.has_synthesis else 'no'}")
+    if bundle.attestations:
+        console.print(f"  Signed: yes ({len(bundle.attestations)} attestation(s))")
     if bundle.manifest.total_cost_usd:
         console.print(f"  Cost: ${bundle.manifest.total_cost_usd:.4f}")
     if out_path:
@@ -141,6 +145,7 @@ def _resolve_providers(
     from parallect.providers.anthropic import AnthropicProvider
     from parallect.providers.gemini import GeminiProvider
     from parallect.providers.grok import GrokProvider
+    from parallect.providers.ldr import LDRProvider
     from parallect.providers.lmstudio import LMStudioProvider
     from parallect.providers.ollama import OllamaProvider
     from parallect.providers.openai_dr import OpenAIDRProvider
@@ -170,6 +175,7 @@ def _resolve_providers(
         "lmstudio": lambda: LMStudioProvider(
             model=settings.lmstudio_default_model, host=settings.lmstudio_host
         ),
+        "ldr": lambda: LDRProvider(),
     }
 
     for name in names:
