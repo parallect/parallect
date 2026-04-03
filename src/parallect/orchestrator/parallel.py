@@ -15,7 +15,11 @@ from parallect.providers import ProviderResult
 from parallect.providers.base import AsyncResearchProvider
 
 
-def _try_sign_bundle(bundle: BundleData, settings: object) -> BundleData:
+def _try_sign_bundle(
+    bundle: BundleData,
+    settings: object,
+    input_report_hashes: dict[str, str] | None = None,
+) -> BundleData:
     """Attempt to sign bundle attestations using the local key.
 
     Creates a bundle-level attestation, signs it, and attaches it to the bundle.
@@ -43,6 +47,13 @@ def _try_sign_bundle(bundle: BundleData, settings: object) -> BundleData:
     manifest_json = bundle.manifest.model_dump_json(exclude_none=True)
     manifest_hash = compute_file_hash(manifest_json.encode("utf-8"))
 
+    from prx_spec.models.attestation_models import AttestationContext
+
+    context = AttestationContext(
+        manifest_sha256=manifest_hash,
+        input_report_hashes=input_report_hashes if input_report_hashes else None,
+    )
+
     attestation = Attestation(
         version="1.0",
         type="bundle",
@@ -56,6 +67,7 @@ def _try_sign_bundle(bundle: BundleData, settings: object) -> BundleData:
             file="manifest.json",
             sha256=manifest_hash,
         ),
+        context=context,
     )
 
     signed = sign_attestation(attestation, signing_key)
@@ -154,6 +166,8 @@ async def research(
     total_cost = 0.0
     total_duration = 0.0
 
+    input_report_hashes: dict[str, str] = {}
+
     for outcome in outcomes:
         if outcome.result and outcome.result.status != "failed":
             # Hook: post_provider
@@ -167,6 +181,8 @@ async def research(
                 total_cost += outcome.result.cost_usd
             if outcome.result.duration_seconds:
                 total_duration = max(total_duration, outcome.result.duration_seconds)
+            if outcome.result.response_hash:
+                input_report_hashes[outcome.provider] = outcome.result.response_hash
 
     # Build bundle
     bundle_id = f"prx_{secrets.token_hex(4)}"
@@ -223,7 +239,7 @@ async def research(
 
     # Auto-sign if settings allow and key is available
     if not no_sign and settings and getattr(settings, "auto_sign", False):
-        bundle = _try_sign_bundle(bundle, settings)
+        bundle = _try_sign_bundle(bundle, settings, input_report_hashes)
 
     # Write to disk if output path given
     if output:

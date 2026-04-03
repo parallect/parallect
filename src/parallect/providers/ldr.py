@@ -6,9 +6,11 @@ Install with: pip install parallect[ldr]
 
 from __future__ import annotations
 
+import json
 import time
 
 from parallect.providers import AsyncResearchProvider, ProviderResult
+from parallect.providers.hash_response import attach_response_hash
 
 
 class LDRProvider:
@@ -58,6 +60,8 @@ class LDRProvider:
             duration = time.monotonic() - start
 
             # LDR returns a dict with 'summary' and optionally 'sources'
+            # Serialize the raw result for hashing
+            raw_body = result if isinstance(result, str) else json.dumps(result, default=str)
             report_md = result if isinstance(result, str) else result.get("summary", str(result))
 
             citations = []
@@ -68,7 +72,7 @@ class LDRProvider:
                         "title": src.get("title", ""),
                     })
 
-            return ProviderResult(
+            provider_result = ProviderResult(
                 provider="ldr",
                 status="completed",
                 report_markdown=report_md,
@@ -77,6 +81,7 @@ class LDRProvider:
                 cost_usd=0.0,  # Local — no API cost
                 duration_seconds=round(duration, 2),
             )
+            return attach_response_hash(provider_result, raw_body)
         except Exception as e:
             return ProviderResult(
                 provider="ldr",

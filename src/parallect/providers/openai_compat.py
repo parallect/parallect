@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import time
 
+import json
+
 import httpx
 
 from parallect.providers import ProviderResult
+from parallect.providers.hash_response import attach_response_hash
 
 
 class OpenAICompatibleProvider:
@@ -55,14 +58,15 @@ class OpenAICompatibleProvider:
                     },
                 )
                 response.raise_for_status()
-                data = response.json()
+                raw_text = response.text
+                data = json.loads(raw_text)
 
             duration = time.monotonic() - start
             choice = data["choices"][0]
             content = choice.get("message", {}).get("content", "")
             usage = data.get("usage", {})
 
-            return ProviderResult(
+            result = ProviderResult(
                 provider=self._name,
                 status="completed",
                 report_markdown=content,
@@ -74,6 +78,7 @@ class OpenAICompatibleProvider:
                     "total": usage.get("total_tokens", 0),
                 },
             )
+            return attach_response_hash(result, raw_text)
         except Exception as e:
             duration = time.monotonic() - start
             return ProviderResult(
