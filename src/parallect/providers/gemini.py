@@ -13,9 +13,12 @@ from __future__ import annotations
 import asyncio
 import time
 
+import json
+
 import httpx
 
 from parallect.providers import ProviderResult
+from parallect.providers.hash_response import attach_response_hash
 
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta"
 DEFAULT_MODEL = "gemini-2.5-flash"
@@ -79,7 +82,8 @@ class GeminiProvider:
                     },
                 )
                 response.raise_for_status()
-                data = response.json()
+                raw_text = response.text
+                data = json.loads(raw_text)
 
             duration = time.monotonic() - start
             candidates = data.get("candidates", [])
@@ -108,7 +112,7 @@ class GeminiProvider:
             usage = data.get("usageMetadata", {})
             cost = self._calculate_cost(usage)
 
-            return ProviderResult(
+            result = ProviderResult(
                 provider="gemini",
                 status="completed",
                 report_markdown=content,
@@ -123,6 +127,7 @@ class GeminiProvider:
                     "thoughts": usage.get("thoughtsTokenCount", 0),
                 },
             )
+            return attach_response_hash(result, raw_text)
         except Exception as e:
             duration = time.monotonic() - start
             return ProviderResult(
@@ -149,9 +154,10 @@ class GeminiProvider:
                 resp.raise_for_status()
                 created = resp.json()
 
-            data = await self._poll(created["id"])
+            data, raw_text = await self._poll(created["id"])
             duration = time.monotonic() - start
-            return self._parse_interaction(data, duration, query)
+            result = self._parse_interaction(data, duration, query)
+            return attach_response_hash(result, raw_text)
 
         except Exception as e:
             duration = time.monotonic() - start
@@ -162,8 +168,11 @@ class GeminiProvider:
                 duration_seconds=round(duration, 2),
             )
 
-    async def _poll(self, interaction_id: str) -> dict:
-        """Poll Interactions API until completion."""
+    async def _poll(self, interaction_id: str) -> tuple[dict, str]:
+        """Poll Interactions API until completion.
+
+        Returns (parsed_data, raw_response_text) tuple.
+        """
         deadline = time.monotonic() + MAX_POLL_S
         async with httpx.AsyncClient(timeout=30.0) as client:
             while time.monotonic() < deadline:
@@ -173,10 +182,11 @@ class GeminiProvider:
                     f"?key={self.api_key}",
                 )
                 resp.raise_for_status()
-                data = resp.json()
+                raw_text = resp.text
+                data = json.loads(raw_text)
                 status = data.get("status")
                 if status == "completed":
-                    return data
+                    return data, raw_text
                 if status == "failed":
                     raise RuntimeError(
                         f"Gemini Deep Research failed: {data.get('error', 'unknown')}"

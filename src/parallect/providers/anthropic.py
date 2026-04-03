@@ -12,9 +12,12 @@ from __future__ import annotations
 
 import time
 
+import json
+
 import httpx
 
 from parallect.providers import ProviderResult
+from parallect.providers.hash_response import attach_response_hash
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1"
 DEFAULT_MODEL = "claude-sonnet-4-20250514"
@@ -68,6 +71,7 @@ class AnthropicProvider:
             "Content-Type": "application/json",
         }
         messages: list[dict] = [{"role": "user", "content": query}]
+        all_raw_responses: list[str] = []
         all_text: list[str] = []
         citations: list[dict] = []
         seen_urls: set[str] = set()
@@ -110,7 +114,9 @@ class AnthropicProvider:
                     json=body,
                 )
                 resp.raise_for_status()
-                data = resp.json()
+                raw_text = resp.text
+                data = json.loads(raw_text)
+                all_raw_responses.append(raw_text)
 
             usage = data.get("usage", {})
             total_input += usage.get("input_tokens", 0)
@@ -165,7 +171,8 @@ class AnthropicProvider:
             total_input, total_output, search_requests, self.model
         )
 
-        return ProviderResult(
+        combined_raw = "\n".join(all_raw_responses)
+        result = ProviderResult(
             provider="anthropic",
             status="completed",
             report_markdown=markdown,
@@ -180,6 +187,7 @@ class AnthropicProvider:
                 "fetch_requests": fetch_requests,
             },
         )
+        return attach_response_hash(result, combined_raw)
 
     @staticmethod
     def _calculate_cost(

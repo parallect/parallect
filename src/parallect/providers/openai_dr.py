@@ -12,9 +12,12 @@ from __future__ import annotations
 import asyncio
 import time
 
+import json
+
 import httpx
 
 from parallect.providers import ProviderResult
+from parallect.providers.hash_response import attach_response_hash
 
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEFAULT_MODEL = "gpt-4o-mini"
@@ -65,14 +68,16 @@ class OpenAIDRProvider:
                     OPENAI_RESPONSES_URL, headers=headers, json=body,
                 )
                 response.raise_for_status()
-                data = response.json()
+                raw_text = response.text
+                data = json.loads(raw_text)
 
             # Deep research requires polling
             if is_deep and data.get("status") != "completed":
-                data = await self._poll(data["id"], headers)
+                data, raw_text = await self._poll(data["id"], headers)
 
             duration = time.monotonic() - start
-            return self._parse(data, duration)
+            result = self._parse(data, duration)
+            return attach_response_hash(result, raw_text)
 
         except Exception as e:
             duration = time.monotonic() - start
@@ -83,8 +88,11 @@ class OpenAIDRProvider:
                 duration_seconds=round(duration, 2),
             )
 
-    async def _poll(self, response_id: str, headers: dict) -> dict:
-        """Poll until deep-research job completes."""
+    async def _poll(self, response_id: str, headers: dict) -> tuple[dict, str]:
+        """Poll until deep-research job completes.
+
+        Returns (parsed_data, raw_response_text) tuple.
+        """
         deadline = time.monotonic() + MAX_POLL_S
         async with httpx.AsyncClient(timeout=30.0) as client:
             while time.monotonic() < deadline:
@@ -94,10 +102,11 @@ class OpenAIDRProvider:
                     headers=headers,
                 )
                 resp.raise_for_status()
-                data = resp.json()
+                raw_text = resp.text
+                data = json.loads(raw_text)
                 status = data.get("status")
                 if status == "completed":
-                    return data
+                    return data, raw_text
                 if status in ("failed", "cancelled"):
                     raise RuntimeError(f"OpenAI deep research {status}")
         raise TimeoutError("OpenAI deep research timed out after 60 minutes")

@@ -15,9 +15,12 @@ from __future__ import annotations
 
 import time
 
+import json
+
 import httpx
 
 from parallect.providers import ProviderResult
+from parallect.providers.hash_response import attach_response_hash
 
 XAI_RESPONSES_URL = "https://api.x.ai/v1/responses"
 DEFAULT_MODEL = "grok-3"
@@ -72,10 +75,11 @@ class GrokProvider:
                     json=body,
                 )
                 response.raise_for_status()
-                data = response.json()
+                raw_text = response.text
+                data = json.loads(raw_text)
 
             duration = time.monotonic() - start
-            return self._parse(data, duration)
+            return self._parse(data, duration, raw_text)
 
         except Exception as e:
             duration = time.monotonic() - start
@@ -86,7 +90,7 @@ class GrokProvider:
                 duration_seconds=round(duration, 2),
             )
 
-    def _parse(self, data: dict, duration: float) -> ProviderResult:
+    def _parse(self, data: dict, duration: float, raw_text: str = "") -> ProviderResult:
         """Parse Responses API output into ProviderResult."""
         markdown = ""
         citations: list[dict] = []
@@ -122,7 +126,7 @@ class GrokProvider:
         else:
             cost = self._calculate_cost(usage, tool_usage, self.model)
 
-        return ProviderResult(
+        result = ProviderResult(
             provider="grok",
             status="completed",
             report_markdown=markdown,
@@ -140,6 +144,9 @@ class GrokProvider:
                 "x_searches": tool_usage.get("x_search", 0),
             },
         )
+        if raw_text:
+            return attach_response_hash(result, raw_text)
+        return result
 
     @staticmethod
     def _calculate_cost(
