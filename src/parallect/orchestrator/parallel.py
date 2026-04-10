@@ -10,6 +10,8 @@ from pathlib import Path
 
 from prx_spec import BundleData, ProviderData, write_bundle
 from prx_spec.models import Manifest, Producer
+from prx_spec.models.provider import Citation, ProviderMeta, TokenUsage
+from prx_spec.models.synthesis import SynthesisMeta
 
 from parallect.providers import ProviderResult
 from parallect.providers.base import AsyncResearchProvider
@@ -59,8 +61,25 @@ def _try_sign_bundle(bundle: BundleData, settings: object) -> BundleData:
     )
 
     signed = sign_attestation(attestation, signing_key)
-    bundle.attestations[f"attestations/bundle.researcher.{key_id}.sig.json"] = signed
+    bundle.attestations[f"bundle.researcher.{key_id}.sig.json"] = signed
     return bundle
+
+
+def _resolve_synth_key(synthesize_with: str, settings: object | None) -> str | None:
+    """Pick the right API key for the synthesis provider from settings."""
+    if settings is None:
+        return None
+    key_map = {
+        "anthropic": "anthropic_api_key",
+        "openai": "openai_api_key",
+        "gemini": "google_api_key",
+        "grok": "xai_api_key",
+        "perplexity": "perplexity_api_key",
+    }
+    for prefix, attr in key_map.items():
+        if synthesize_with.startswith(prefix) or synthesize_with == prefix:
+            return getattr(settings, attr, None) or None
+    return None
 
 
 @dataclass
@@ -154,19 +173,71 @@ async def research(
     total_cost = 0.0
     total_duration = 0.0
 
+    failed_outcomes: list[ProviderOutcome] = []
+
     for outcome in outcomes:
-        if outcome.result and outcome.result.status != "failed":
-            # Hook: post_provider
-            outcome.result = await plugin_mgr.run_post_provider(
-                outcome.provider, outcome.result
+        if outcome.error or not outcome.result or outcome.result.status == "failed":
+            failed_outcomes.append(outcome)
+            continue
+        # Hook: post_provider
+        outcome.result = await plugin_mgr.run_post_provider(
+            outcome.provider, outcome.result
+        )
+        r = outcome.result
+
+        # Build per-provider citations list
+        citations = None
+        if r.citations:
+            citations = [
+                Citation(
+                    index=i,
+                    url=c.get("url", ""),
+                    title=c.get("title"),
+                    snippet=c.get("snippet"),
+                    domain=c.get("domain"),
+                )
+                for i, c in enumerate(r.citations)
+                if c.get("url")
+            ]
+
+        # Build per-provider meta
+        tokens = None
+        if r.tokens:
+            tokens = TokenUsage(
+                input=r.tokens.get("input", 0),
+                output=r.tokens.get("output", 0),
+                total=r.tokens.get("total", 0),
             )
-            pd = ProviderData(name=outcome.provider, report_md=outcome.result.report_markdown)
-            provider_data.append(pd)
-            providers_used.append(outcome.provider)
-            if outcome.result.cost_usd:
-                total_cost += outcome.result.cost_usd
-            if outcome.result.duration_seconds:
-                total_duration = max(total_duration, outcome.result.duration_seconds)
+        meta = ProviderMeta(
+            provider=outcome.provider,
+            model=r.model,
+            cost_usd=r.cost_usd,
+            duration_seconds=r.duration_seconds,
+            tokens=tokens,
+            status=r.status,  # type: ignore[arg-type]
+        )
+
+        pd = ProviderData(
+            name=outcome.provider,
+            report_md=r.report_markdown,
+            citations=citations or None,
+            meta=meta,
+        )
+        provider_data.append(pd)
+        providers_used.append(outcome.provider)
+        if r.cost_usd:
+            total_cost += r.cost_usd
+        if r.duration_seconds:
+            total_duration = max(total_duration, r.duration_seconds)
+
+    if not providers_used:
+        error_lines: list[str] = []
+        for o in failed_outcomes:
+            err = o.error or (o.result.error if o.result else None) or "unknown error"
+            error_lines.append(f"  • {o.provider}: {err}")
+        raise RuntimeError(
+            f"All providers failed — no results to bundle.\n" + "\n".join(error_lines)
+        )
 
     # Build bundle
     bundle_id = f"prx_{secrets.token_hex(4)}"
@@ -174,25 +245,120 @@ async def research(
 
     has_synthesis = False
     synthesis_md = None
+    synthesis_meta = None
 
     # Synthesize if requested and we have results
     if not no_synthesis and synthesize_with and provider_data:
         try:
             from parallect.synthesis.llm import synthesize
 
+            synth_api_key = _resolve_synth_key(synthesize_with, settings)
             results = [
                 o.result for o in outcomes if o.result and o.result.status != "failed"
             ]
-            synth_result = await synthesize(query, results, model=synthesize_with)
+            synth_result = await synthesize(
+                query, results, model=synthesize_with, api_key=synth_api_key,
+            )
             synthesis_md = synth_result.report_markdown
             has_synthesis = True
+            synthesis_meta = SynthesisMeta(
+                provider=synthesize_with,
+                model=synth_result.model,
+                cost_usd=synth_result.cost_usd,
+                duration_seconds=synth_result.duration_seconds,
+                tokens=synth_result.tokens,
+            )
             if synth_result.cost_usd:
                 total_cost += synth_result.cost_usd
             # Hook: post_synthesis
             synthesis_md = await plugin_mgr.run_post_synthesis(synthesis_md)
-        except Exception:
-            # Synthesis failure is non-fatal
-            pass
+        except Exception as exc:
+            import logging
+            logging.getLogger("parallect").warning("Synthesis failed: %s", exc)
+
+    # Extract claims from provider results
+    claims_file = None
+    if extract_claims_flag and provider_data:
+        try:
+            from parallect.synthesis.extract import extract_claims
+            from prx_spec.models.synthesis import BasicClaim, ClaimsFile
+
+            synth_api_key = _resolve_synth_key(synthesize_with or "anthropic", settings)
+            successful_results = [
+                o.result for o in outcomes if o.result and o.result.status != "failed"
+            ]
+            raw_claims = await extract_claims(
+                query, successful_results,
+                api_key=synth_api_key,
+                model=synthesize_with or "anthropic",
+            )
+            if raw_claims:
+                parsed_claims = [
+                    BasicClaim(
+                        id=c.get("id", f"claim_{i:03d}"),
+                        content=c["content"],
+                        providers_supporting=c.get("providers_supporting", []),
+                        providers_contradicting=c.get("providers_contradicting", []),
+                        category=c.get("category"),
+                    )
+                    for i, c in enumerate(raw_claims)
+                    if c.get("content")
+                ]
+                if parsed_claims:
+                    claims_file = ClaimsFile(
+                        extraction_model=synthesize_with or "anthropic",
+                        extraction_version="0.1.0",
+                        claims=parsed_claims,
+                    )
+        except Exception as exc:
+            import logging
+            logging.getLogger("parallect").warning("Claims extraction failed: %s", exc)
+
+    # Extract follow-on research questions
+    follow_ons = None
+    if has_synthesis and synthesis_md:
+        try:
+            from parallect.synthesis.extract import extract_follow_ons
+            from prx_spec.models.synthesis import FollowOn
+
+            synth_api_key = _resolve_synth_key(synthesize_with or "anthropic", settings)
+            raw_follow_ons = await extract_follow_ons(
+                query, synthesis_md,
+                api_key=synth_api_key,
+                model=synthesize_with or "anthropic",
+            )
+            if raw_follow_ons:
+                follow_ons = [
+                    FollowOn(
+                        query=fo["query"],
+                        rationale=fo.get("rationale"),
+                        estimated_providers=fo.get("estimated_providers", []),
+                        related_claims=fo.get("related_claims", []),
+                    )
+                    for fo in raw_follow_ons
+                    if fo.get("query")
+                ]
+        except Exception as exc:
+            import logging
+            logging.getLogger("parallect").warning("Follow-on extraction failed: %s", exc)
+
+    # Build source registry from provider citations
+    sources_registry = None
+    if provider_data:
+        try:
+            from parallect.synthesis.extract import extract_sources
+            from prx_spec.models.sources import Source, SourcesRegistry
+
+            successful_results = [
+                o.result for o in outcomes if o.result and o.result.status != "failed"
+            ]
+            raw_sources = extract_sources(successful_results)
+            if raw_sources:
+                parsed_sources = [Source(**s) for s in raw_sources]
+                sources_registry = SourcesRegistry(sources=parsed_sources)
+        except Exception as exc:
+            import logging
+            logging.getLogger("parallect").warning("Source extraction failed: %s", exc)
 
     manifest = Manifest(
         spec_version="1.0",
@@ -202,10 +368,10 @@ async def research(
         producer=Producer(name="parallect-oss", version="0.1.0"),
         providers_used=providers_used,
         has_synthesis=has_synthesis,
-        has_claims=False,
-        has_sources=False,
+        has_claims=claims_file is not None,
+        has_sources=sources_registry is not None,
         has_evidence_graph=False,
-        has_follow_ons=False,
+        has_follow_ons=bool(follow_ons),
         total_cost_usd=round(total_cost, 4) if total_cost else None,
         total_duration_seconds=round(total_duration, 2) if total_duration else None,
         parent_bundle_id=parent_bundle_id,
@@ -216,6 +382,10 @@ async def research(
         query_md=f"# Research Query\n\n{query}",
         providers=provider_data,
         synthesis_md=synthesis_md,
+        synthesis_meta=synthesis_meta,
+        claims=claims_file,
+        follow_ons=follow_ons,
+        sources=sources_registry,
     )
 
     # Hook: post_bundle

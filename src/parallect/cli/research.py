@@ -88,10 +88,8 @@ async def _research_async(
     if no_synthesis:
         synth_model = None
 
-    # Resolve output path
-    out_path = output
-    if not out_path and output_dir:
-        out_path = output_dir
+    # Resolve output path (fall back to settings.output_dir so bundles are always saved)
+    out_path = output or output_dir or settings.output_dir
 
     console.print(f"\n[bold]Researching:[/bold] {query}")
     if deep:
@@ -109,17 +107,22 @@ async def _research_async(
 
         from parallect.orchestrator.parallel import research
 
-        bundle = await research(
-            query=query,
-            providers=provider_instances,
-            synthesize_with=synth_model,
-            no_synthesis=no_synthesis,
-            budget_cap_usd=budget_cap,
-            timeout_per_provider=timeout,
-            output=out_path,
-            no_sign=no_sign,
-            settings=settings,
-        )
+        try:
+            bundle = await research(
+                query=query,
+                providers=provider_instances,
+                synthesize_with=synth_model,
+                no_synthesis=no_synthesis,
+                budget_cap_usd=budget_cap,
+                timeout_per_provider=timeout,
+                output=out_path,
+                no_sign=no_sign,
+                settings=settings,
+            )
+        except RuntimeError as exc:
+            progress.stop()
+            console.print(f"\n[red bold]Research failed:[/red bold] {exc}")
+            raise typer.Exit(1)
 
         progress.update(task, description="Done!")
 
