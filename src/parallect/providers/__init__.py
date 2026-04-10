@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 
@@ -19,6 +20,9 @@ class ProviderResult:
     duration_seconds: float | None = None
     tokens: dict | None = None
     error: str | None = None
+    response_hash: str | None = None
+    raw_response_size: int | None = None
+    received_at: datetime | None = None
 
 
 @runtime_checkable
