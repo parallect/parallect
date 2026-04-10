@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import time
 
+import json
+
 import httpx
 
 from parallect.providers import ProviderResult
+from parallect.providers.hash_response import attach_response_hash
 
 PERPLEXITY_API_URL = "https://api.perplexity.ai"
 DEFAULT_MODEL = "sonar-deep-research"
@@ -55,7 +58,8 @@ class PerplexityProvider:
                     },
                 )
                 response.raise_for_status()
-                data = response.json()
+                raw_text = response.text
+                data = json.loads(raw_text)
 
             duration = time.monotonic() - start
             content = data["choices"][0]["message"]["content"]
@@ -65,7 +69,7 @@ class PerplexityProvider:
             for i, url in enumerate(data.get("citations", []), 1):
                 citations.append({"index": i, "url": url})
 
-            return ProviderResult(
+            result = ProviderResult(
                 provider="perplexity",
                 status="completed",
                 report_markdown=content,
@@ -79,6 +83,7 @@ class PerplexityProvider:
                     "total": usage.get("total_tokens", 0),
                 },
             )
+            return attach_response_hash(result, raw_text)
         except Exception as e:
             duration = time.monotonic() - start
             return ProviderResult(
