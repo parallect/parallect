@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import time
 from urllib.parse import urlparse
 
@@ -13,6 +14,14 @@ import httpx
 from parallect.providers import ProviderResult
 
 logger = logging.getLogger("parallect")
+
+
+def _clean_json(raw: str) -> str:
+    """Strip markdown fences and whitespace so json.loads succeeds."""
+    text = raw.strip()
+    text = re.sub(r"^```(?:json)?\s*\n?", "", text)
+    text = re.sub(r"\n?```\s*$", "", text)
+    return text.strip()
 
 CLAIMS_SYSTEM_PROMPT = """\
 You are a claims extraction expert. Given multiple research reports on the same \
@@ -67,7 +76,7 @@ async def extract_claims(
         else:
             raw = await _call_openai_compat(prompt, CLAIMS_SYSTEM_PROMPT, model, api_key)
 
-        data = json.loads(raw)
+        data = json.loads(_clean_json(raw))
         return data.get("claims", [])
     except Exception as exc:
         logger.warning("Claims extraction failed: %s", exc)
@@ -118,7 +127,7 @@ async def extract_follow_ons(
         else:
             raw = await _call_openai_compat(prompt, FOLLOW_ONS_SYSTEM_PROMPT, model, api_key)
 
-        data = json.loads(raw)
+        data = json.loads(_clean_json(raw))
         return data.get("follow_ons", [])
     except Exception as exc:
         logger.warning("Follow-on extraction failed: %s", exc)
@@ -202,12 +211,21 @@ async def _call_anthropic(prompt: str, system: str, api_key: str | None) -> str:
     return "\n".join(b["text"] for b in blocks if b.get("type") == "text")
 
 
+_DEFAULT_MODELS = {
+    "openai": "gpt-4o-mini",
+    "gemini": "gemini-2.5-flash",
+    "grok": "grok-3",
+    "perplexity": "sonar",
+}
+
+
 async def _call_openai_compat(
     prompt: str, system: str, model: str, api_key: str | None
 ) -> str:
     import os
 
     key = api_key or os.environ.get("OPENAI_API_KEY", "")
+    resolved_model = _DEFAULT_MODELS.get(model, model)
 
     async with httpx.AsyncClient(timeout=120.0) as client:
         response = await client.post(
@@ -217,7 +235,7 @@ async def _call_openai_compat(
                 "Content-Type": "application/json",
             },
             json={
-                "model": model,
+                "model": resolved_model,
                 "messages": [
                     {"role": "system", "content": system},
                     {"role": "user", "content": prompt},
