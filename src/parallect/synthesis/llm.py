@@ -67,6 +67,13 @@ async def synthesize(
     prompt = _build_synthesis_prompt(query, provider_results)
     start = time.monotonic()
 
+    DEFAULT_MODELS = {
+        "openai": "gpt-4o-mini",
+        "gemini": "gemini-2.5-flash",
+        "grok": "grok-3",
+        "perplexity": "sonar",
+    }
+
     if model.startswith("anthropic") or model == "anthropic":
         result = await _synthesize_anthropic(prompt, api_key)
     elif model.startswith("ollama"):
@@ -76,7 +83,8 @@ async def synthesize(
         model_name = model.split("/", 1)[1] if "/" in model else "default"
         result = await _synthesize_lmstudio(prompt, model_name)
     else:
-        result = await _synthesize_openai_compat(prompt, model, api_key)
+        resolved_model = DEFAULT_MODELS.get(model, model)
+        result = await _synthesize_openai_compat(prompt, resolved_model, api_key)
 
     result.duration_seconds = round(time.monotonic() - start, 2)
     return result
