@@ -56,7 +56,7 @@ class ParallectSettings(BaseSettings):
 
     # Parallect API (for enhance + SaaS research)
     parallect_api_key: str = ""
-    parallect_api_url: str = "https://api.parallect.ai"
+    parallect_api_url: str = "https://parallect.ai"
 
     # Signing
     key_path: str = ""

@@ -260,9 +260,16 @@ async def _run_saas(
         console.print(f"[red]API error:[/red] {e}")
         raise typer.Exit(1)
 
-    thread = submission.get("thread") or {}
+    # The /api/v1/threads response is flat: top-level is the thread (id/title/message),
+    # with the job nested under .job. Some prerelease shapes nested thread too —
+    # fall through to both so older servers don't break the CLI.
+    thread = submission.get("thread") if isinstance(submission.get("thread"), dict) else None
     job = submission.get("job") or {}
-    thread_id = thread.get("id") or submission.get("threadId")
+    thread_id = (
+        (thread or {}).get("id")
+        or submission.get("threadId")
+        or submission.get("id")
+    )
     job_id = job.get("id") or submission.get("jobId")
     if not job_id:
         console.print("[red]API did not return a job id.[/red]")
