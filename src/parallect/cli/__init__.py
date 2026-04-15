@@ -7,6 +7,7 @@ import typer
 from parallect.cli.config import config_cmd
 from parallect.cli.continue_ import continue_cmd
 from parallect.cli.enhance import enhance_cmd
+from parallect.cli.jobs import jobs_app
 from parallect.cli.research import research_cmd
 
 app = typer.Typer(
@@ -70,7 +71,7 @@ Enhance an existing bundle through the hosted API:
 ## Environment variables
 
   PARALLECT_API_KEY   - hosted API key (par_live_...), routes to SaaS
-  PARALLECT_API_URL   - override API base (default: https://api.parallect.ai)
+  PARALLECT_API_URL   - override API base (default: https://parallect.ai)
   PERPLEXITY_API_KEY  - BYOK provider key
   GOOGLE_API_KEY      - BYOK Gemini key
   OPENAI_API_KEY      - BYOK OpenAI key
@@ -105,10 +106,10 @@ SaaS-mode error signals:
 SaaS jobs are durable. The CLI prints the job id on submission; if the CLI
 disconnects you can poll manually:
     curl -H "Authorization: Bearer $PARALLECT_API_KEY" \\
-         https://api.parallect.ai/api/v1/jobs/<job_id>
+         https://parallect.ai/api/v1/jobs/<job_id>
 and download the bundle once `status == completed`:
     curl -H "Authorization: Bearer $PARALLECT_API_KEY" \\
-         https://api.parallect.ai/api/v1/jobs/<job_id>/prx -o out.prx
+         https://parallect.ai/api/v1/jobs/<job_id>/prx -o out.prx
 """
 
 
@@ -136,6 +137,7 @@ app.command("research")(research_cmd)
 app.command("continue")(continue_cmd)
 app.command("enhance")(enhance_cmd)
 app.command("config")(config_cmd)
+app.add_typer(jobs_app, name="jobs")
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ from typing import Any, AsyncIterator
 
 import httpx
 
-PARALLECT_API_URL = "https://api.parallect.ai"
+PARALLECT_API_URL = "https://parallect.ai"
 
 # ---------------------------------------------------------------------------
 # Exceptions
