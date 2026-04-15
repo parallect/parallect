@@ -54,8 +54,9 @@ class ParallectSettings(BaseSettings):
     output_dir: str = "."
     timeout_per_provider: float = 120.0
 
-    # Parallect API (for enhance command)
+    # Parallect API (for enhance + SaaS research)
     parallect_api_key: str = ""
+    parallect_api_url: str = "https://api.parallect.ai"
 
     # Signing
     key_path: str = ""
@@ -105,6 +106,7 @@ def _flatten_toml(data: dict, prefix: str = "") -> dict:
         "defaults.output_dir": "output_dir",
         "defaults.timeout_per_provider": "timeout_per_provider",
         "parallect_api.api_key": "parallect_api_key",
+        "parallect_api.api_url": "parallect_api_url",
         "signing.key_path": "key_path",
         "signing.auto_sign": "auto_sign",
         "signing.identity": "identity",
