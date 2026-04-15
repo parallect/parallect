@@ -67,16 +67,19 @@ class RouteDecision:
 
 
 def decide_route(
-    *, api_key_flag: str | None, local_flag: bool, env_key: str | None
+    *, api_key_flag: str | None, local_flag: bool, byok_flag: bool, env_key: str | None
 ) -> RouteDecision:
     """Pick SaaS vs BYOK.
 
-    - ``--local`` always forces BYOK.
+    - ``--local`` forces BYOK with local-only providers (Ollama/LMStudio).
+    - ``--byok`` forces BYOK with all configured frontier providers (even if
+      a Parallect API key is set). Use this to compare self-hosted routing
+      vs the hosted service.
     - Otherwise: if an API key is provided via flag or env, use SaaS.
     - Else BYOK.
     """
-    if local_flag:
-        return RouteDecision("byok", None, "--local forced")
+    if local_flag or byok_flag:
+        return RouteDecision("byok", None, "--local forced" if local_flag else "--byok forced")
     if api_key_flag:
         return RouteDecision("saas", api_key_flag, "--api-key flag")
     if env_key:
@@ -116,7 +119,11 @@ def research_cmd(
     ),
     local: bool = typer.Option(
         False, "--local",
-        help="Force BYOK mode even if an API key is present.",
+        help="Force BYOK with local-only providers (Ollama/LMStudio).",
+    ),
+    byok: bool = typer.Option(
+        False, "--byok",
+        help="Force BYOK with configured frontier providers even if a Parallect API key is set.",
     ),
     synthesize_with: str | None = typer.Option(
         None, "--synthesize-with", "-s",
@@ -160,6 +167,7 @@ def research_cmd(
     route = decide_route(
         api_key_flag=api_key,
         local_flag=local,
+        byok_flag=byok,
         env_key=os.environ.get("PARALLECT_API_KEY"),
     )
 
