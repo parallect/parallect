@@ -8,6 +8,7 @@ from parallect.cli.config import config_cmd
 from parallect.cli.continue_ import continue_cmd
 from parallect.cli.enhance import enhance_cmd
 from parallect.cli.jobs import jobs_app
+from parallect.cli.plugins import plugins_app
 from parallect.cli.research import research_cmd
 
 app = typer.Typer(
@@ -138,6 +139,7 @@ app.command("continue")(continue_cmd)
 app.command("enhance")(enhance_cmd)
 app.command("config")(config_cmd)
 app.add_typer(jobs_app, name="jobs")
+app.add_typer(plugins_app, name="plugins")
 
 
 if __name__ == "__main__":
