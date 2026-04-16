@@ -67,7 +67,11 @@ class RouteDecision:
 
 
 def decide_route(
-    *, api_key_flag: str | None, local_flag: bool, byok_flag: bool, env_key: str | None
+    *,
+    api_key_flag: str | None,
+    local_flag: bool,
+    env_key: str | None,
+    byok_flag: bool = False,
 ) -> RouteDecision:
     """Pick SaaS vs BYOK.
 
@@ -147,6 +151,11 @@ def research_cmd(
     ),
     poll_interval: float = typer.Option(
         15.0, "--poll-interval", help="[SaaS] Seconds between status polls"
+    ),
+    publish_to: str | None = typer.Option(
+        None, "--publish-to",
+        help="After the bundle is produced, publish it to a prxhub collection. "
+             "Creates the collection if it doesn't exist. Requires `prx login`.",
     ),
     deep: bool = typer.Option(
         False, "--deep",
@@ -384,6 +393,34 @@ def _write_minimal_bundle(path: Path, *, query: str, job) -> None:  # noqa: ANN0
 # ---------------------------------------------------------------------------
 
 
+def _publish_to_collection(bundle_path: "Path", collection_slug: str) -> None:
+    """Shell out to `prx publish --collection <slug>` after the bundle is produced.
+
+    Done as a subprocess (not an import) because the `prx` CLI is a separate
+    package that ships independently — a user may not have it installed. We
+    degrade gracefully with a clear install hint.
+    """
+    import shutil
+    import subprocess
+    if not shutil.which("prx"):
+        console.print(
+            "[yellow]--publish-to set but `prx` CLI is not installed. "
+            "Install with `pip install prx` and then run:\n"
+            f"  prx publish {bundle_path} --collection {collection_slug}[/yellow]"
+        )
+        return
+    console.print(f"\n[dim]Publishing to collection '{collection_slug}'...[/dim]")
+    result = subprocess.run(
+        ["prx", "publish", str(bundle_path), "--collection", collection_slug],
+        check=False,
+    )
+    if result.returncode != 0:
+        console.print(
+            f"[yellow]Publish failed. You can retry manually:\n"
+            f"  prx publish {bundle_path} --collection {collection_slug}[/yellow]"
+        )
+
+
 async def _run_byok(
     *,
     query: str,
@@ -475,6 +512,9 @@ async def _run_byok(
         console.print(f"  Cost: ${bundle.manifest.total_cost_usd:.4f}")
     if out_path:
         console.print(f"  Saved to: {out_path}")
+
+    if publish_to and out_path:
+        _publish_to_collection(out_path, publish_to)
 
 
 def _resolve_providers(
