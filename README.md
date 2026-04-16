@@ -7,7 +7,9 @@
 
 **Multi-provider AI deep research from the command line. Bring your own keys.**
 
-`parallect` fans a research query out to multiple frontier AI providers in parallel — Perplexity, Gemini, OpenAI, Grok, Anthropic, plus local models via Ollama and LM Studio — then synthesizes their outputs into a single report with cross-referenced citations, extracted claims, and consensus/conflict detection. The result is packaged as a portable, signed [`.prx`](https://github.com/parallect/prx-spec) archive you can read in any text editor, diff against another run, or publish to [prxhub](https://prxhub.com).
+`parallect` fans a research query out to multiple frontier AI providers in parallel — Perplexity, Gemini, OpenAI, Grok, Anthropic, plus local models via Ollama and LM Studio — then synthesizes their outputs into a single report with cross-referenced citations, extracted claims, and consensus/conflict detection.
+
+The result is packaged as a signed [Portable Research eXchange (`.prx`)](https://github.com/parallect/prx-spec) archive — an open format for AI research that keeps cryptographic attribution back to every provider and source, so the research stays sharable and verifiable whether you keep it private or publish it to [prxhub](https://prxhub.com).
 
 ```bash
 $ parallect research "What are the leading theories on dark matter?"
