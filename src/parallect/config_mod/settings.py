@@ -40,12 +40,15 @@ class ParallectSettings(BaseSettings):
         extra="ignore",
     )
 
-    # Provider API keys
+    # Provider API keys (BYOK)
     perplexity_api_key: str = ""
     google_api_key: str = ""
     openai_api_key: str = ""
     xai_api_key: str = ""
     anthropic_api_key: str = ""
+    # Wave-1: generic BYOK keys for OpenAI-compat aggregators.
+    openrouter_api_key: str = ""
+    litellm_api_key: str = ""
 
     # Defaults
     providers: list[str] = Field(default_factory=lambda: ["perplexity", "gemini", "openai"])
@@ -63,11 +66,34 @@ class ParallectSettings(BaseSettings):
     auto_sign: bool = True
     identity: str = ""
 
-    # Local providers
+    # Local providers (legacy, still used by [local] section + provider resolver)
     ollama_host: str = "http://localhost:11434"
     ollama_default_model: str = "llama3.2"
     lmstudio_host: str = "http://localhost:1234"
     lmstudio_default_model: str = "default"
+
+    # ---------------------------------------------------------------------
+    # Wave-1: pluggable synthesis + embeddings backends
+    #
+    # [synthesis]
+    #   backend      = "openrouter" | "litellm" | "openai" | "gemini" |
+    #                  "anthropic" | "ollama" | "lmstudio" | "custom"
+    #   model        = "google/gemini-2.5-flash-lite-preview"
+    #   base_url     = "https://openrouter.ai/api/v1"   # optional, auto-set per backend
+    #   api_key_env  = "OPENROUTER_API_KEY"              # env var holding the key
+    #
+    # [embeddings]
+    #   (same shape; anthropic omitted -- no embeddings endpoint)
+    # ---------------------------------------------------------------------
+    synthesis_backend: str = ""
+    synthesis_model: str = ""
+    synthesis_base_url: str = ""
+    synthesis_api_key_env: str = ""
+
+    embeddings_backend: str = ""
+    embeddings_model: str = ""
+    embeddings_base_url: str = ""
+    embeddings_api_key_env: str = ""
 
     @classmethod
     def load(cls) -> ParallectSettings:
@@ -100,6 +126,8 @@ def _flatten_toml(data: dict, prefix: str = "") -> dict:
         "providers.openai_api_key": "openai_api_key",
         "providers.xai_api_key": "xai_api_key",
         "providers.anthropic_api_key": "anthropic_api_key",
+        "providers.openrouter_api_key": "openrouter_api_key",
+        "providers.litellm_api_key": "litellm_api_key",
         "defaults.providers": "providers",
         "defaults.synthesize_with": "synthesize_with",
         "defaults.budget_cap_usd": "budget_cap_usd",
@@ -114,6 +142,14 @@ def _flatten_toml(data: dict, prefix: str = "") -> dict:
         "local.ollama_default_model": "ollama_default_model",
         "local.lmstudio_host": "lmstudio_host",
         "local.lmstudio_default_model": "lmstudio_default_model",
+        "synthesis.backend": "synthesis_backend",
+        "synthesis.model": "synthesis_model",
+        "synthesis.base_url": "synthesis_base_url",
+        "synthesis.api_key_env": "synthesis_api_key_env",
+        "embeddings.backend": "embeddings_backend",
+        "embeddings.model": "embeddings_model",
+        "embeddings.base_url": "embeddings_base_url",
+        "embeddings.api_key_env": "embeddings_api_key_env",
     }
 
     for section_key, value in data.items():
