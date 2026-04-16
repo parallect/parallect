@@ -7,20 +7,33 @@
 
 **Multi-provider AI deep research from the command line. Bring your own keys.**
 
-`parallect` fans a research query out to multiple frontier AI providers in parallel (Perplexity, Gemini, OpenAI, Grok, Anthropic, plus local models via Ollama and LM Studio), synthesizes their outputs into a single report with cross-referenced citations, and packages the result as a portable [`.prx`](https://github.com/parallect/prx-spec) bundle.
+`parallect` fans a research query out to multiple frontier AI providers in parallel — Perplexity, Gemini, OpenAI, Grok, Anthropic, plus local models via Ollama and LM Studio — then synthesizes their outputs into a single report with cross-referenced citations, extracted claims, and consensus/conflict detection. The result is packaged as a portable, signed [`.prx`](https://github.com/parallect/prx-spec) archive you can read in any text editor, diff against another run, or publish to [prxhub](https://prxhub.com).
 
 ```bash
 $ parallect research "What are the leading theories on dark matter?"
+
+  Fanning out to: perplexity, gemini, openai, anthropic
+  [████████████████] 4/4 providers  4m 32s  $0.18
+  Synthesizing with anthropic ...
+  Extracting 47 claims from 4 reports ...
+
+  ✓ Saved to research.prx  (127 KB, signed)
+
+  $ parallect research "..."  - dark matter theories
+  → 4 providers  · 47 claims  · 23 sources  · 92% consensus
 ```
 
 ## Why?
 
-- **No single provider knows everything.** Different models see different sources, reason differently, and disagree in useful ways. Ask several at once.
-- **Portable output.** Results save to an open, signed [`.prx`](https://github.com/parallect/prx-spec) archive — readable in any text editor, publishable to [prxhub](https://prxhub.com), verifiable via Ed25519.
-- **BYOK.** Your keys, your bill, your data. No intermediate service.
-- **Local-first option.** Run against Ollama or LM Studio for fully offline research.
+- **No single provider knows everything.** Different models see different sources, reason differently, and disagree in useful ways. Ask several at once, then see where they agree.
+- **Portable, signed output.** Every run saves to an open [`.prx`](https://github.com/parallect/prx-spec) archive — plain text under the hood, verifiable via Ed25519, shareable via [prxhub](https://prxhub.com).
+- **BYOK.** Your API keys, your bill, your data. No intermediate service sees your queries.
+- **Local-first option.** Run entirely offline against Ollama or LM Studio if you don't want to call frontier APIs.
+- **Scriptable.** Stable CLI, structured output, clean exit codes. Pipe it, chain it, call it from your editor.
 
 ## Install
+
+From PyPI:
 
 ```bash
 pip install parallect
@@ -46,13 +59,13 @@ parallect research "What are the leading theories on dark matter?"
 # Pick specific providers
 parallect research "quantum computing progress 2025" -p perplexity,openai,anthropic
 
-# Deep research mode (premium models, higher cost)
+# Deep research mode — premium models, higher cost, deeper reasoning
 parallect research "CRISPR gene therapy developments" --deep
 
-# Local-only (Ollama / LM Studio)
+# Offline — Ollama or LM Studio only
 parallect research "explain transformers" --local
 
-# Follow-on research — continues from a prior bundle
+# Follow-on research rooted in a prior bundle
 parallect continue output.prx "What about practical applications?"
 ```
 
@@ -63,13 +76,9 @@ parallect continue output.prx "What about practical applications?"
 | `parallect config` | Interactive TUI for providers, API keys, backends, plugins |
 | `parallect research <query>` | Run a new research query |
 | `parallect continue <bundle> <query>` | Follow-on research rooted in an existing bundle |
-| `parallect enhance <bundle>` | Send a bundle to the hosted Parallect API for extra claim extraction + evidence graph |
-| `parallect jobs status <id>` | Check a SaaS-mode job |
-| `parallect jobs download <id>` | Download a completed SaaS-mode bundle |
-| `parallect plugins list` | List installed data-source and pipeline plugins |
-| `parallect plugins index <type>[:<name>]` | Index a data source (e.g. a local filesystem) |
-| `parallect plugins config <type>[:<name>]` | Configure a plugin instance |
-| `parallect plugins status` | Show per-plugin health / freshness |
+| `parallect enhance <bundle>` | Send a bundle to the hosted Parallect API for claim extraction + evidence graph |
+| `parallect jobs <subcommand>` | Manage async SaaS-mode jobs (`status`, `download`) |
+| `parallect plugins <subcommand>` | Manage data-source and pipeline plugins (`list`, `status`, `index`, `config`) |
 
 Run `parallect <command> --help` for full flags.
 
@@ -108,8 +117,8 @@ Plugins let parallect search and cite your local content alongside web sources. 
 
 | Plugin | Purpose |
 |---|---|
-| `filesystem` | Index a directory of markdown/text/PDF |
-| `obsidian` | Index an Obsidian vault, respecting links + graph ranking |
+| `filesystem` | Index a directory of markdown / text / PDF |
+| `obsidian` | Index an Obsidian vault, respecting links and graph ranking |
 | `prior_research` | Reuse prior `.prx` bundles as a knowledge base |
 | `prxhub` | Pull from a [prxhub](https://prxhub.com) collection |
 
@@ -127,20 +136,31 @@ class ResearchPlugin:
     async def post_bundle(self, bundle: Any) -> Any: ...
 ```
 
-Register via the `parallect.plugins` entry point. See [`docs/PLUGINS.md`](docs/PLUGINS.md) for the full protocol and examples.
+Register via the `parallect.plugins` entry point. See [`docs/PLUGINS.md`](docs/PLUGINS.md) for the full protocol.
 
 ## Output format
 
-Every research run saves to a [`.prx` bundle](https://github.com/parallect/prx-spec) — a gzipped tar archive containing:
+Every run saves to a [`.prx` bundle](https://github.com/parallect/prx-spec) — a gzipped tar archive:
 
-- `manifest.json` — JSON-LD envelope with providers, cost, and provenance
-- `query.md` — the research question
-- `providers/<name>/report.md` — each provider's raw output
-- `synthesis.md` — unified cross-provider synthesis
-- `claims.json` — extracted atomic claims with provider attribution
-- `sources/registry.json` — deduplicated, quality-scored sources
-- `evidence/` — claim-to-source graph
-- `manifest.jws` + `public-key.jwk` — Ed25519 signature (if a signing key is configured)
+```
+research.prx
+├── manifest.json          JSON-LD envelope: providers, cost, provenance
+├── manifest.jws           Ed25519 signature of manifest hash
+├── public-key.jwk         Public key for standalone verification
+├── query.md               The research question
+├── providers/
+│   ├── perplexity/report.md + meta.json
+│   ├── gemini/report.md + meta.json
+│   └── ...
+├── synthesis/
+│   ├── report.md          Unified cross-provider synthesis
+│   └── claims.json        Extracted atomic claims with provider attribution
+├── sources/registry.json  Deduplicated, quality-scored sources
+├── evidence/graph.json    Claim-to-source graph
+└── provenance/graph.jsonld  W3C PROV-O provenance
+```
+
+Every file is human-readable text or JSON — `tar -xzf research.prx` and read in any editor.
 
 Use the [`prx`](https://github.com/parallect/prx) CLI to read, validate, diff, merge, sign, and publish bundles.
 
