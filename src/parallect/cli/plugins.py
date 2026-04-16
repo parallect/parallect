@@ -119,6 +119,15 @@ def status_cmd(
 # ---------------------------------------------------------------------------
 
 
+def _configure_plugin_from_toml(plugin_name, plugin) -> None:
+    """Read per-plugin config from the user's TOML and call configure()."""
+    from parallect.orchestrator.plugin_sources import _extract_plugin_configs
+    configs = _extract_plugin_configs(None)
+    instances = configs.get(plugin_name, [])
+    if instances:
+        asyncio.run(plugin.configure(instances[0]))
+
+
 @plugins_app.command("index")
 def index_cmd(
     name: str = typer.Argument(..., help="Plugin name."),
@@ -136,6 +145,8 @@ def index_cmd(
             f"[yellow]{name} does not require an index; nothing to do.[/yellow]"
         )
         return
+
+    _configure_plugin_from_toml(name, plugin)
 
     console.print(f"[cyan]Indexing {name}...[/cyan]")
     try:

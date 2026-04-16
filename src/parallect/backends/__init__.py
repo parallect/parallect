@@ -243,7 +243,11 @@ def _read_synthesis_from_settings(
     settings: object | None,
 ) -> tuple[str, str, str, str]:
     if settings is None:
-        return ("anthropic", "", "", "")
+        try:
+            from parallect.config_mod.settings import ParallectSettings
+            settings = ParallectSettings.load()
+        except Exception:
+            return ("anthropic", "", "", "")
     backend = getattr(settings, "synthesis_backend", "") or "anthropic"
     base_url = getattr(settings, "synthesis_base_url", "") or ""
     api_key_env = getattr(settings, "synthesis_api_key_env", "") or ""
@@ -255,7 +259,11 @@ def _read_embeddings_from_settings(
     settings: object | None,
 ) -> tuple[str, str, str, str]:
     if settings is None:
-        return ("openai", "", "", "")
+        try:
+            from parallect.config_mod.settings import ParallectSettings
+            settings = ParallectSettings.load()
+        except Exception:
+            return ("openai", "", "", "")
     backend = getattr(settings, "embeddings_backend", "") or "openai"
     base_url = getattr(settings, "embeddings_base_url", "") or ""
     api_key_env = getattr(settings, "embeddings_api_key_env", "") or ""

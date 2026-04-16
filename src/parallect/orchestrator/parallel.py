@@ -91,6 +91,9 @@ def _resolve_synth_key(synthesize_with: str, settings: object | None) -> str | N
     for prefix, attr in key_map.items():
         if synthesize_with.startswith(prefix) or synthesize_with == prefix:
             return getattr(settings, attr, None) or None
+    # Local backends don't need a real key
+    if any(synthesize_with.startswith(p) for p in ("lmstudio", "ollama")):
+        return "not-needed"
     return None
 
 

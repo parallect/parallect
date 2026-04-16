@@ -108,10 +108,8 @@ class TestResearchFunction:
 
     @pytest.mark.asyncio
     async def test_all_fail_empty_providers(self):
-        """When all providers fail, Manifest validation rejects empty providers_used."""
-        from pydantic import ValidationError
-
-        with pytest.raises(ValidationError):
+        """When all providers fail, orchestrator raises RuntimeError before reaching Manifest."""
+        with pytest.raises(RuntimeError, match="All providers failed"):
             await research(
                 query="test",
                 providers=[FailingMockProvider()],

@@ -91,6 +91,10 @@ class TestPluginsIndex:
 
     def test_index_filesystem_bubbles_error(self, monkeypatch):
         """filesystem without configure() should error clearly."""
+        monkeypatch.setattr(
+            "parallect.orchestrator.plugin_sources._extract_plugin_configs",
+            lambda _: {},
+        )
         result = runner.invoke(app, ["plugins", "index", "filesystem"])
         assert result.exit_code == 1
         assert "failed" in result.stdout.lower() or "not configured" in result.stdout.lower()

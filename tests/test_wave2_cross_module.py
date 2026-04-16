@@ -540,8 +540,12 @@ class TestUnconfiguredSourceError:
         with pytest.raises(PluginError, match="unknown data source"):
             await run_plugin_sources("q", "nonexistent-plugin")
 
-    async def test_filesystem_without_path_raises(self):
+    async def test_filesystem_without_path_raises(self, monkeypatch):
         register(FilesystemPlugin())
+        monkeypatch.setattr(
+            "parallect.orchestrator.plugin_sources._extract_plugin_configs",
+            lambda _: {},
+        )
         with pytest.raises(PluginError, match="has no `path` configured"):
             await run_plugin_sources("q", "filesystem")
 
