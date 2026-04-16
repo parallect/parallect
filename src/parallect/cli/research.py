@@ -147,7 +147,10 @@ def research_cmd(
         None, "--output-dir", help="Output directory for .prx file"
     ),
     timeout: float = typer.Option(
-        120.0, "--timeout", help="Per-provider timeout (BYOK) / request timeout (SaaS) in seconds"
+        300.0, "--timeout",
+        help="Per-provider timeout (BYOK) / request timeout (SaaS) in seconds. "
+             "Default 300s — perplexity's sonar-deep-research and similar models "
+             "routinely need 100s+; shorter caps cause silent provider drops.",
     ),
     poll_interval: float = typer.Option(
         15.0, "--poll-interval", help="[SaaS] Seconds between status polls"
