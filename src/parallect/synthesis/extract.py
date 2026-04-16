@@ -6,11 +6,18 @@ import hashlib
 import json
 import logging
 import re
-import time
 from urllib.parse import urlparse
 
-import httpx
-
+from parallect.backends import (
+    OPENAI_COMPAT_BACKENDS,
+    BackendSpec,
+    resolve_synthesis_backend,
+)
+from parallect.backends.adapters import (
+    call_anthropic_chat,
+    call_gemini_chat,
+    call_openai_compat_chat,
+)
 from parallect.providers import ProviderResult
 
 logger = logging.getLogger("parallect")
@@ -22,6 +29,19 @@ def _clean_json(raw: str) -> str:
     text = re.sub(r"^```(?:json)?\s*\n?", "", text)
     text = re.sub(r"\n?```\s*$", "", text)
     return text.strip()
+
+
+async def _dispatch(spec: BackendSpec, system_prompt: str, user_prompt: str) -> str:
+    """Route a system+user chat call to the right backend adapter."""
+    if spec.kind == "anthropic":
+        result = await call_anthropic_chat(spec, user_prompt, system_prompt)
+    elif spec.kind == "gemini":
+        result = await call_gemini_chat(spec, user_prompt, system_prompt)
+    elif spec.kind in OPENAI_COMPAT_BACKENDS:
+        result = await call_openai_compat_chat(spec, user_prompt, system_prompt)
+    else:
+        raise ValueError(f"Unsupported backend for extraction: {spec.kind}")
+    return result.get("content", "")
 
 CLAIMS_SYSTEM_PROMPT = """\
 You are a claims extraction expert. Given multiple research reports on the same \
@@ -50,9 +70,16 @@ async def extract_claims(
     query: str,
     provider_results: list[ProviderResult],
     api_key: str | None = None,
-    model: str = "anthropic",
+    model: str | None = None,
+    *,
+    base_url: str | None = None,
+    settings: object | None = None,
 ) -> list[dict]:
     """Extract claims from provider results using an LLM.
+
+    The extraction model follows the same resolution as synthesis: CLI overrides,
+    then `[synthesis]` in config, then defaults. Local backends (lmstudio,
+    ollama) work without an API key.
 
     Returns a list of claim dicts compatible with prx_spec BasicClaim.
     """
@@ -71,11 +98,21 @@ async def extract_claims(
     )
 
     try:
-        if model.startswith("anthropic") or model == "anthropic":
-            raw = await _call_anthropic(prompt, CLAIMS_SYSTEM_PROMPT, api_key)
-        else:
-            raw = await _call_openai_compat(prompt, CLAIMS_SYSTEM_PROMPT, model, api_key)
-
+        cli_model = model if model and "/" not in model else None
+        spec = resolve_synthesis_backend(
+            cli_base_url=base_url,
+            cli_model=cli_model,
+            settings=settings,
+        )
+        if api_key:
+            spec = BackendSpec(
+                kind=spec.kind,
+                base_url=spec.base_url,
+                api_key=api_key,
+                model=spec.model,
+                api_key_env=spec.api_key_env,
+            )
+        raw = await _dispatch(spec, CLAIMS_SYSTEM_PROMPT, prompt)
         data = json.loads(_clean_json(raw))
         return data.get("claims", [])
     except Exception as exc:
@@ -106,11 +143,15 @@ async def extract_follow_ons(
     query: str,
     synthesis_md: str,
     api_key: str | None = None,
-    model: str = "anthropic",
+    model: str | None = None,
+    *,
+    base_url: str | None = None,
+    settings: object | None = None,
 ) -> list[dict]:
     """Generate follow-on research questions from the synthesis.
 
-    Returns a list of dicts compatible with prx_spec FollowOn.
+    Uses the same backend resolution as synthesis. Returns a list of dicts
+    compatible with prx_spec FollowOn.
     """
     if not synthesis_md:
         return []
@@ -122,11 +163,21 @@ async def extract_follow_ons(
     )
 
     try:
-        if model.startswith("anthropic") or model == "anthropic":
-            raw = await _call_anthropic(prompt, FOLLOW_ONS_SYSTEM_PROMPT, api_key)
-        else:
-            raw = await _call_openai_compat(prompt, FOLLOW_ONS_SYSTEM_PROMPT, model, api_key)
-
+        cli_model = model if model and "/" not in model else None
+        spec = resolve_synthesis_backend(
+            cli_base_url=base_url,
+            cli_model=cli_model,
+            settings=settings,
+        )
+        if api_key:
+            spec = BackendSpec(
+                kind=spec.kind,
+                base_url=spec.base_url,
+                api_key=api_key,
+                model=spec.model,
+                api_key_env=spec.api_key_env,
+            )
+        raw = await _dispatch(spec, FOLLOW_ONS_SYSTEM_PROMPT, prompt)
         data = json.loads(_clean_json(raw))
         return data.get("follow_ons", [])
     except Exception as exc:
@@ -182,67 +233,3 @@ def _canonical_url(url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}{path}".lower()
 
 
-async def _call_anthropic(prompt: str, system: str, api_key: str | None) -> str:
-    import os
-
-    key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
-    if not key:
-        raise ValueError("Anthropic API key required for claims extraction")
-
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        response = await client.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": key,
-                "anthropic-version": "2023-06-01",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "claude-sonnet-4-20250514",
-                "max_tokens": 4096,
-                "system": system,
-                "messages": [{"role": "user", "content": prompt}],
-            },
-        )
-        response.raise_for_status()
-        data = response.json()
-
-    blocks = data.get("content", [])
-    return "\n".join(b["text"] for b in blocks if b.get("type") == "text")
-
-
-_DEFAULT_MODELS = {
-    "openai": "gpt-4o-mini",
-    "gemini": "gemini-2.5-flash",
-    "grok": "grok-3",
-    "perplexity": "sonar",
-}
-
-
-async def _call_openai_compat(
-    prompt: str, system: str, model: str, api_key: str | None
-) -> str:
-    import os
-
-    key = api_key or os.environ.get("OPENAI_API_KEY", "")
-    resolved_model = _DEFAULT_MODELS.get(model, model)
-
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        response = await client.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": resolved_model,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": prompt},
-                ],
-            },
-        )
-        response.raise_for_status()
-        data = response.json()
-
-    return data["choices"][0]["message"]["content"]

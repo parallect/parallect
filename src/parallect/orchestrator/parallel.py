@@ -77,6 +77,20 @@ def _try_sign_bundle(
     return bundle
 
 
+def _default_extraction_model(settings: object | None) -> str:
+    """Resolve a sensible model string for claims/follow-on extraction when no
+    explicit model is supplied. Reads `[synthesis]` config first so local
+    backends (lmstudio, ollama) work BYOK-free."""
+    if settings is not None:
+        backend = getattr(settings, "synthesis_backend", "") or ""
+        model = getattr(settings, "synthesis_model", "") or ""
+        if backend and model:
+            return f"{backend}/{model}"
+        if backend:
+            return backend
+    return "anthropic"
+
+
 def _resolve_synth_key(synthesize_with: str, settings: object | None) -> str | None:
     """Pick the right API key for the synthesis provider from settings."""
     if settings is None:
@@ -331,14 +345,20 @@ async def research(
             from parallect.synthesis.extract import extract_claims
             from prx_spec.models.synthesis import BasicClaim, ClaimsFile
 
-            synth_api_key = _resolve_synth_key(synthesize_with or "anthropic", settings)
+            # Claims extraction reuses the same backend resolution as synthesis:
+            # explicit model > [synthesis] config in settings > default. Never
+            # falls back to hardcoded anthropic, so local backends work BYOK-free.
+            extraction_model = synthesize_with or _default_extraction_model(settings)
+            synth_api_key = _resolve_synth_key(extraction_model, settings)
             successful_results = [
                 o.result for o in outcomes if o.result and o.result.status != "failed"
             ]
             raw_claims = await extract_claims(
                 query, successful_results,
                 api_key=synth_api_key,
-                model=synthesize_with or "anthropic",
+                model=synthesize_with,
+                base_url=synthesis_base_url,
+                settings=settings,
             )
             if raw_claims:
                 parsed_claims = [
@@ -354,7 +374,7 @@ async def research(
                 ]
                 if parsed_claims:
                     claims_file = ClaimsFile(
-                        extraction_model=synthesize_with or "anthropic",
+                        extraction_model=extraction_model,
                         extraction_version="0.1.0",
                         claims=parsed_claims,
                     )
@@ -369,11 +389,14 @@ async def research(
             from parallect.synthesis.extract import extract_follow_ons
             from prx_spec.models.synthesis import FollowOn
 
-            synth_api_key = _resolve_synth_key(synthesize_with or "anthropic", settings)
+            extraction_model = synthesize_with or _default_extraction_model(settings)
+            synth_api_key = _resolve_synth_key(extraction_model, settings)
             raw_follow_ons = await extract_follow_ons(
                 query, synthesis_md,
                 api_key=synth_api_key,
-                model=synthesize_with or "anthropic",
+                model=synthesize_with,
+                base_url=synthesis_base_url,
+                settings=settings,
             )
             if raw_follow_ons:
                 follow_ons = [

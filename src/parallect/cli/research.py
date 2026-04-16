@@ -526,8 +526,9 @@ async def _run_byok(
             synth_model = backend
         else:
             synth_model = settings.synthesize_with
-    if no_synthesis:
-        synth_model = None
+    # NOTE: we keep synth_model populated even when --no-synthesis is set, so
+    # claims and follow-on extraction can still use the configured backend
+    # (e.g. lmstudio) instead of falling back to Anthropic and failing BYOK-free.
 
     out_path = output or output_dir or settings.output_dir
 
