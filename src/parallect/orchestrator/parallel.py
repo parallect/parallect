@@ -148,6 +148,7 @@ async def research(
     parent_context: str | None = None,
     no_sign: bool = False,
     settings: object | None = None,
+    sources: str | None = None,
 ) -> BundleData:
     """High-level research: fan out, collect, optionally synthesize, write .prx.
 
@@ -178,7 +179,30 @@ async def research(
             f"{query}\n\n---\n"
             f"Context from previous research:\n{parent_context}"
         )
-    outcomes = await fan_out(effective_query, providers, timeout_per_provider)
+
+    # Web providers + data-source plugins run concurrently so a slow
+    # plugin never blocks the web fan-out (and vice-versa).
+    from parallect.orchestrator.plugin_sources import run_plugin_sources
+
+    provider_task = asyncio.create_task(
+        fan_out(effective_query, providers, timeout_per_provider)
+    )
+    plugins_task = asyncio.create_task(
+        run_plugin_sources(effective_query, sources, settings=settings)
+    )
+    outcomes = await provider_task
+    plugin_outcomes = await plugins_task
+
+    # Fold plugin results into outcomes as synthetic ProviderOutcome entries.
+    for pr in plugin_outcomes:
+        if pr.result is None:
+            outcomes.append(ProviderOutcome(
+                provider=pr.spec.display, error=pr.error or "plugin failed"
+            ))
+        else:
+            outcomes.append(ProviderOutcome(
+                provider=pr.spec.display, result=pr.result
+            ))
 
     # Build provider data from successful results
     provider_data: list[ProviderData] = []
