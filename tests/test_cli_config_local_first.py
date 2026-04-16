@@ -23,11 +23,8 @@ from parallect.cli import config as cli_config_mod
 from parallect.backends.probe import LocalProbeResult
 from parallect.cli import app
 
-# Empty-string answers for every API key prompt in `parallect config`.
-# Order is fragile w.r.t. the prompt flow: perplexity, google, openai, xai,
-# anthropic, openrouter, parallect. The optional local-default confirmation
-# comes first when a local backend is detected.
-_SEVEN_EMPTY_KEYS = "\n" * 7
+# Menu-driven config: after first-run probe, user enters "s" to save.
+_SAVE_AND_EXIT = "s\n"
 
 
 def _load_toml(path: Path) -> dict:
@@ -49,10 +46,10 @@ class TestLocalFirst:
     def test_lmstudio_reachable_sets_backend(self, isolated_config, monkeypatch):
         fake = lambda timeout=0.4: LocalProbeResult(lmstudio_reachable=True, ollama_reachable=False)
         monkeypatch.setattr(probe_mod, "probe_local_backends", fake)
-        monkeypatch.setattr(cli_config_mod, "probe_local_backends", fake)
+        monkeypatch.setattr("parallect.backends.probe.probe_local_backends", fake)
         runner = CliRunner()
-        # First prompt: "Default synthesis + embeddings to lmstudio?" -> accept default (yes)
-        input_stream = "\n" + _SEVEN_EMPTY_KEYS
+        # Accept local default (yes) → save and exit
+        input_stream = "\n" + _SAVE_AND_EXIT
         result = runner.invoke(app, ["config"], input=input_stream)
         assert result.exit_code == 0, result.output
 
@@ -65,9 +62,9 @@ class TestLocalFirst:
     def test_only_ollama_reachable_sets_backend(self, isolated_config, monkeypatch):
         fake = lambda timeout=0.4: LocalProbeResult(lmstudio_reachable=False, ollama_reachable=True)
         monkeypatch.setattr(probe_mod, "probe_local_backends", fake)
-        monkeypatch.setattr(cli_config_mod, "probe_local_backends", fake)
+        monkeypatch.setattr("parallect.backends.probe.probe_local_backends", fake)
         runner = CliRunner()
-        input_stream = "\n" + _SEVEN_EMPTY_KEYS
+        input_stream = "\n" + _SAVE_AND_EXIT
         result = runner.invoke(app, ["config"], input=input_stream)
         assert result.exit_code == 0, result.output
 
@@ -78,47 +75,39 @@ class TestLocalFirst:
     def test_user_declines_local_default(self, isolated_config, monkeypatch):
         fake = lambda timeout=0.4: LocalProbeResult(lmstudio_reachable=True, ollama_reachable=False)
         monkeypatch.setattr(probe_mod, "probe_local_backends", fake)
-        monkeypatch.setattr(cli_config_mod, "probe_local_backends", fake)
+        monkeypatch.setattr("parallect.backends.probe.probe_local_backends", fake)
         runner = CliRunner()
-        # 'n' declines local; all keys empty, no cloud config written either.
-        input_stream = "n\n" + _SEVEN_EMPTY_KEYS
+        # 'n' declines local → save and exit
+        input_stream = "n\n" + _SAVE_AND_EXIT
         result = runner.invoke(app, ["config"], input=input_stream)
         assert result.exit_code == 0, result.output
 
         data = _load_toml(isolated_config / "parallect" / "config.toml")
-        # No [synthesis] or [embeddings] section when user declined AND
-        # entered no cloud keys -- or the section exists but with nothing.
-        assert "synthesis" not in data or data["synthesis"] == {}
-        assert "embeddings" not in data or data["embeddings"] == {}
+        assert "synthesis" not in data or not data.get("synthesis", {}).get("backend")
+        assert "embeddings" not in data or not data.get("embeddings", {}).get("backend")
 
-    def test_neither_reachable_prompts_for_cloud(self, isolated_config, monkeypatch):
+    def test_neither_reachable_save_empty(self, isolated_config, monkeypatch):
+        """No local detected, user just saves and exits → empty config is valid."""
         fake = lambda timeout=0.4: LocalProbeResult(lmstudio_reachable=False, ollama_reachable=False)
         monkeypatch.setattr(probe_mod, "probe_local_backends", fake)
-        monkeypatch.setattr(cli_config_mod, "probe_local_backends", fake)
+        monkeypatch.setattr("parallect.backends.probe.probe_local_backends", fake)
         runner = CliRunner()
-        # No local prompt, but we enter an Anthropic key.
-        # Prompt order: perplexity, google, openai, xai, anthropic, openrouter, parallect
-        input_stream = "\n\n\n\nsk-ant-test\n\n\n"
+        input_stream = _SAVE_AND_EXIT
         result = runner.invoke(app, ["config"], input=input_stream)
         assert result.exit_code == 0, result.output
+        toml_path = isolated_config / "parallect" / "config.toml"
+        assert toml_path.exists()
 
+    def test_menu_configure_synthesis(self, isolated_config, monkeypatch):
+        """User picks synthesis backend via menu option 1."""
+        fake = lambda timeout=0.4: LocalProbeResult(lmstudio_reachable=False, ollama_reachable=False)
+        monkeypatch.setattr(probe_mod, "probe_local_backends", fake)
+        monkeypatch.setattr("parallect.backends.probe.probe_local_backends", fake)
+        runner = CliRunner()
+        # Menu: 1 (synthesis) → 3 (anthropic) → model prompt → save
+        input_stream = "1\n3\nclaude-sonnet-4\nANTHROPIC_API_KEY\ns\n"
+        result = runner.invoke(app, ["config"], input=input_stream)
+        assert result.exit_code == 0, result.output
         data = _load_toml(isolated_config / "parallect" / "config.toml")
-        assert data["providers"]["anthropic_api_key"] == "sk-ant-test"
         assert data["synthesis"]["backend"] == "anthropic"
-        # Embeddings should NOT pick anthropic (no embeddings endpoint).
-        assert data.get("embeddings", {}).get("backend", "") != "anthropic"
-
-    def test_openai_key_also_picks_embeddings_default(self, isolated_config, monkeypatch):
-        fake = lambda timeout=0.4: LocalProbeResult(lmstudio_reachable=False, ollama_reachable=False)
-        monkeypatch.setattr(probe_mod, "probe_local_backends", fake)
-        monkeypatch.setattr(cli_config_mod, "probe_local_backends", fake)
-        runner = CliRunner()
-        # perplexity, google, openai, xai, anthropic, openrouter, parallect
-        input_stream = "\n\nsk-openai\n\n\n\n\n"
-        result = runner.invoke(app, ["config"], input=input_stream)
-        assert result.exit_code == 0, result.output
-
-        data = _load_toml(isolated_config / "parallect" / "config.toml")
-        assert data["providers"]["openai_api_key"] == "sk-openai"
-        assert data["synthesis"]["backend"] == "openai"
-        assert data["embeddings"]["backend"] == "openai"
+        assert data["synthesis"]["model"] == "claude-sonnet-4"
