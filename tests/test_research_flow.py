@@ -491,3 +491,72 @@ class TestEvidenceGraph:
         assert bundle.sources is None
         assert bundle.evidence_graph is None
         assert bundle.manifest.has_evidence_graph is False
+
+
+class TestResearchOnStatus:
+    """The ``on_status`` callback fires messages at each pipeline phase."""
+
+    @pytest.mark.asyncio
+    async def test_status_sequence_includes_fan_out_extraction_and_write(
+        self, tmp_path
+    ):
+        messages: list[str] = []
+
+        canned_claims = [
+            {
+                "id": "claim_001",
+                "content": "Something claim",
+                "providers_supporting": ["mock"],
+                "providers_contradicting": [],
+                "category": "fact",
+            }
+        ]
+
+        with patch(
+            "parallect.synthesis.extract.extract_claims",
+            AsyncMock(return_value=canned_claims),
+        ):
+            out = tmp_path / "bundle.prx"
+            await research(
+                query="status test",
+                providers=[MockProvider("mock")],
+                no_synthesis=True,
+                output=str(out),
+                on_status=messages.append,
+            )
+
+        # Fan-out phase should be announced.
+        assert any(m.startswith("Fanning out to") for m in messages), messages
+        # Per-provider landing line.
+        assert any(m.startswith("mock: complete") for m in messages), messages
+        # Claims extraction phase.
+        assert any(m.startswith("Extracting claims with") for m in messages), messages
+        # Bundle write.
+        assert any(m.startswith("Writing ") and m.endswith(".prx...") for m in messages), messages
+
+    @pytest.mark.asyncio
+    async def test_callback_errors_are_swallowed(self):
+        """A misbehaving on_status hook must not kill the research run."""
+
+        def boom(_msg: str) -> None:
+            raise RuntimeError("UI is on fire")
+
+        bundle = await research(
+            query="resilience test",
+            providers=[MockProvider()],
+            no_synthesis=True,
+            on_status=boom,
+        )
+        assert bundle is not None
+        assert len(bundle.providers) == 1
+
+    @pytest.mark.asyncio
+    async def test_on_status_optional(self):
+        """Omitting on_status is fine — no regression from baseline behaviour."""
+        bundle = await research(
+            query="baseline test",
+            providers=[MockProvider()],
+            no_synthesis=True,
+        )
+        assert bundle is not None
+        assert len(bundle.providers) == 1

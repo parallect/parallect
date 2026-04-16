@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import secrets
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -165,10 +166,17 @@ async def research(
     no_sign: bool = False,
     settings: object | None = None,
     sources: str | None = None,
+    on_status: Callable[[str], None] | None = None,
 ) -> BundleData:
     """High-level research: fan out, collect, optionally synthesize, write .prx.
 
     This is the primary entry point for both the CLI and programmatic use.
+
+    ``on_status`` is an optional callback invoked with a human-readable
+    status message at each phase transition (fan-out, per-provider landings,
+    synthesis, extraction, writing, etc.). The CLI wires this to the rich
+    Progress spinner so users see ongoing feedback instead of a multi-minute
+    silent stretch.
     """
     import time as _time
 
@@ -176,6 +184,15 @@ async def research(
     from parallect.plugins import PluginManager
 
     run_start = _time.monotonic()
+
+    def _status(msg: str) -> None:
+        if on_status is None:
+            return
+        try:
+            on_status(msg)
+        except Exception:
+            # Status reporting is advisory — never let a UI bug kill a research run.
+            pass
 
     # Initialize plugins
     plugin_mgr = PluginManager()
@@ -204,6 +221,9 @@ async def research(
     # plugin never blocks the web fan-out (and vice-versa).
     from parallect.orchestrator.plugin_sources import run_plugin_sources
 
+    fan_out_count = len(providers) + (1 if sources else 0)
+    _status(f"Fanning out to {fan_out_count} provider{'s' if fan_out_count != 1 else ''}...")
+
     provider_task = asyncio.create_task(
         fan_out(effective_query, providers, timeout_per_provider)
     )
@@ -212,6 +232,22 @@ async def research(
     )
     outcomes = await provider_task
     plugin_outcomes = await plugins_task
+
+    # One-line summary per provider outcome so the user sees real progress
+    # and not just a static "Running research..." spinner.
+    for o in outcomes:
+        if o.error or not o.result or o.result.status == "failed":
+            err = o.error or (o.result.error if o.result else None) or "unknown error"
+            _status(f"{o.provider}: failed ({err})")
+        else:
+            cost = o.result.cost_usd or 0.0
+            dur = o.result.duration_seconds or 0.0
+            _status(f"{o.provider}: complete (${cost:.4f}, {dur:.1f}s)")
+    for pr in plugin_outcomes:
+        if pr.result is None:
+            _status(f"{pr.spec.display}: failed ({pr.error or 'plugin failed'})")
+        else:
+            _status(f"{pr.spec.display}: complete")
 
     # Fold plugin results into outcomes as synthetic ProviderOutcome entries.
     for pr in plugin_outcomes:
@@ -345,6 +381,7 @@ async def research(
         try:
             from parallect.synthesis.llm import synthesize
 
+            _status(f"Synthesizing with {synthesize_with}...")
             synth_api_key = _resolve_synth_key(synthesize_with, settings)
             results = [
                 o.result for o in outcomes if o.result and o.result.status != "failed"
@@ -385,6 +422,7 @@ async def research(
             # explicit model > [synthesis] config in settings > default. Never
             # falls back to hardcoded anthropic, so local backends work BYOK-free.
             extraction_model = synthesize_with or _default_extraction_model(settings)
+            _status(f"Extracting claims with {extraction_model}...")
             synth_api_key = _resolve_synth_key(extraction_model, settings)
             successful_results = [
                 o.result for o in outcomes if o.result and o.result.status != "failed"
@@ -426,6 +464,7 @@ async def research(
             from prx_spec.models.synthesis import FollowOn
 
             extraction_model = synthesize_with or _default_extraction_model(settings)
+            _status(f"Extracting follow-ons with {extraction_model}...")
             synth_api_key = _resolve_synth_key(extraction_model, settings)
             raw_follow_ons = await extract_follow_ons(
                 query, synthesis_md,
@@ -456,6 +495,7 @@ async def research(
             from parallect.synthesis.extract import extract_sources
             from prx_spec.models.sources import Source, SourcesRegistry
 
+            _status("Building source registry...")
             successful_results = [
                 o.result for o in outcomes if o.result and o.result.status != "failed"
             ]
@@ -530,6 +570,7 @@ async def research(
 
     # Auto-sign if settings allow and key is available
     if not no_sign and settings and getattr(settings, "auto_sign", False):
+        _status("Signing bundle...")
         bundle = _try_sign_bundle(bundle, settings, input_report_hashes)
         # The signer mutates bundle.attestations; flip the manifest flag to match.
         if bundle.attestations:
@@ -540,6 +581,7 @@ async def research(
         output_path = Path(output)
         if output_path.is_dir():
             output_path = output_path / f"{bundle_id}.prx"
+        _status(f"Writing {bundle_id}.prx...")
         write_bundle(bundle, output_path)
 
     return bundle
