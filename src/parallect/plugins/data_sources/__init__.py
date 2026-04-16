@@ -117,9 +117,10 @@ def _load_incore() -> None:
     _INCORE_LOADED = True
     from parallect.plugins.data_sources.filesystem import FilesystemPlugin
     from parallect.plugins.data_sources.prior_research import PriorResearchCache
+    from parallect.plugins.data_sources.obsidian import ObsidianPlugin
     from parallect.plugins.data_sources.prxhub import PrxhubPlugin
 
-    for plugin in (PrxhubPlugin(), FilesystemPlugin(), PriorResearchCache()):
+    for plugin in (PrxhubPlugin(), FilesystemPlugin(), ObsidianPlugin(), PriorResearchCache()):
         # Don't clobber an already-registered instance (tests register first).
         _REGISTRY.setdefault(plugin.name, plugin)
 
