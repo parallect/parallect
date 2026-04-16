@@ -445,7 +445,7 @@ def _publish_to_collection(bundle_path: "Path", collection_slug: str) -> None:
     if not shutil.which("prx"):
         console.print(
             "[yellow]--publish-to set but `prx` CLI is not installed. "
-            "Install with `pip install prx` and then run:\n"
+            "Install with `pip install prx-cli` and then run:\n"
             f"  prx publish {bundle_path} --collection {collection_slug}[/yellow]"
         )
         return

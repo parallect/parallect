@@ -4398,7 +4398,7 @@ requires-dist = [
     { name = "local-deep-research", marker = "extra == 'ldr'", specifier = ">=0.1.0" },
     { name = "openai", marker = "extra == 'all'", specifier = ">=1.0" },
     { name = "platformdirs", specifier = ">=4.0" },
-    { name = "prx-spec", editable = "../prx-spec" },
+    { name = "prx-spec", specifier = ">=0.1.0" },
     { name = "pydantic", specifier = ">=2.0,<3.0" },
     { name = "pydantic-settings", specifier = ">=2.0" },
     { name = "pyyaml", specifier = ">=6.0" },
@@ -4807,23 +4807,14 @@ wheels = [
 [[package]]
 name = "prx-spec"
 version = "0.2.0"
-source = { editable = "../prx-spec" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
     { name = "pynacl" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "pydantic", specifier = ">=2.0,<3.0" },
-    { name = "pynacl", specifier = ">=1.5.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=9.0.2" },
-    { name = "pytest-asyncio", specifier = ">=1.3.0" },
-    { name = "ruff", specifier = ">=0.15.8" },
+sdist = { url = "https://files.pythonhosted.org/packages/a2/ec/22534f9a323d7a32e2853aba22c7fab183b927844f8720a5c681d5cb73d7/prx_spec-0.2.0.tar.gz", hash = "sha256:c7fdcd110057dd0e8114d01739d585e174bd7b1bd2bb4372dbca8960bd1aade4", size = 23850, upload-time = "2026-04-16T17:26:53.264Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/38/c3/a0c1f663f42ec95a3e9db01207c78422f8afc156bcf580678c18bb35d126/prx_spec-0.2.0-py3-none-any.whl", hash = "sha256:e18a55b90d1bf0e3c09eac08381a6d706dda4e9c70f77b278c1140714804053e", size = 33320, upload-time = "2026-04-16T17:26:51.682Z" },
 ]
 
 [[package]]
