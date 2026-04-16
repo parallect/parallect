@@ -119,34 +119,59 @@ def status_cmd(
 # ---------------------------------------------------------------------------
 
 
-def _configure_plugin_from_toml(plugin_name, plugin) -> None:
-    """Read per-plugin config from the user's TOML and call configure()."""
+def _parse_plugin_spec(spec: str) -> tuple[str, str | None]:
+    """Parse 'filesystem:instance-name' → ('filesystem', 'instance-name').
+    Plain 'filesystem' → ('filesystem', None)."""
+    if ":" in spec:
+        base, instance = spec.split(":", 1)
+        return base.strip(), instance.strip()
+    return spec.strip(), None
+
+
+def _configure_plugin_from_toml(plugin_name, plugin, instance_name=None) -> None:
+    """Read per-plugin config from the user's TOML and call configure().
+    If instance_name is set, pick the matching instance by 'name' field."""
     from parallect.orchestrator.plugin_sources import _extract_plugin_configs
     configs = _extract_plugin_configs(None)
     instances = configs.get(plugin_name, [])
-    if instances:
+    if instance_name:
+        match = next((c for c in instances if c.get("name") == instance_name), None)
+        if match:
+            asyncio.run(plugin.configure(match))
+        else:
+            available = [c.get("name", "?") for c in instances]
+            raise PluginError(
+                f"No '{plugin_name}' instance named '{instance_name}'. "
+                f"Configured: {', '.join(available) if available else '(none)'}"
+            )
+    elif instances:
         asyncio.run(plugin.configure(instances[0]))
 
 
 @plugins_app.command("index")
 def index_cmd(
-    name: str = typer.Argument(..., help="Plugin name."),
+    name: str = typer.Argument(..., help="Plugin name, e.g. 'filesystem' or 'filesystem:my-notes'."),
     force: bool = typer.Option(False, "--force", help="Re-index even if fresh."),
 ) -> None:
     """(Re)build a plugin's local index."""
+    base_name, instance = _parse_plugin_spec(name)
     try:
-        plugin = get(name)
+        plugin = get(base_name)
     except PluginError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1)
 
     if not getattr(plugin, "requires_index", False):
         console.print(
-            f"[yellow]{name} does not require an index; nothing to do.[/yellow]"
+            f"[yellow]{base_name} does not require an index; nothing to do.[/yellow]"
         )
         return
 
-    _configure_plugin_from_toml(name, plugin)
+    try:
+        _configure_plugin_from_toml(base_name, plugin, instance)
+    except PluginError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
 
     console.print(f"[cyan]Indexing {name}...[/cyan]")
     try:

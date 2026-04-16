@@ -1,8 +1,7 @@
-"""Tests for the local-first default behaviour in `parallect config`.
+"""Tests for the local-first default behaviour in ``parallect config``.
 
-We exercise the decision tree inside `config_cmd` at the unit level. The
-typer prompts are driven via `typer.testing.CliRunner`, the local probe is
-monkeypatched, and the resulting config.toml is parsed back for assertions.
+These tests exercise the first-run probe and menu config flows using
+Textual's ``App.run_test()`` + pilot for headless deterministic testing.
 """
 
 from __future__ import annotations
@@ -11,20 +10,20 @@ import sys
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 
 if sys.version_info >= (3, 11):
     import tomllib
 else:
     import tomli as tomllib  # type: ignore[import-not-found]
 
-from parallect.backends import probe as probe_mod
-from parallect.cli import config as cli_config_mod
 from parallect.backends.probe import LocalProbeResult
-from parallect.cli import app
-
-# Menu-driven config: after first-run probe, user enters "s" to save.
-_SAVE_AND_EXIT = "s\n"
+from parallect.cli.config_app import (
+    BackendScreen,
+    ConfigApp,
+    FirstRunDialog,
+    load_toml,
+    write_toml,
+)
 
 
 def _load_toml(path: Path) -> dict:
@@ -32,82 +31,118 @@ def _load_toml(path: Path) -> dict:
         return tomllib.load(f)
 
 
-@pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    """Redirect platformdirs to a tmp dir so we don't touch the real config."""
-    monkeypatch.setattr(
-        "platformdirs.user_config_dir",
-        lambda name: str(tmp_path / name),
-    )
-    return tmp_path
+def _make_app(
+    tmp_path: Path,
+    probe_fn=None,
+    existing_data: dict | None = None,
+    first_run: bool = False,
+) -> ConfigApp:
+    config_path = tmp_path / "parallect" / "config.toml"
+    if existing_data is not None:
+        write_toml(config_path, existing_data)
+    elif not first_run:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text("# Parallect CLI configuration\n")
+    return ConfigApp(config_path=config_path, probe_fn=probe_fn)
 
 
 class TestLocalFirst:
-    def test_lmstudio_reachable_sets_backend(self, isolated_config, monkeypatch):
-        fake = lambda timeout=0.4: LocalProbeResult(lmstudio_reachable=True, ollama_reachable=False)
-        monkeypatch.setattr(probe_mod, "probe_local_backends", fake)
-        monkeypatch.setattr("parallect.backends.probe.probe_local_backends", fake)
-        runner = CliRunner()
-        # Accept local default (yes) → save and exit
-        input_stream = "\n" + _SAVE_AND_EXIT
-        result = runner.invoke(app, ["config"], input=input_stream)
-        assert result.exit_code == 0, result.output
+    @pytest.mark.asyncio
+    async def test_lmstudio_reachable_sets_backend(self, tmp_path: Path) -> None:
+        probe_fn = lambda: LocalProbeResult(lmstudio_reachable=True, ollama_reachable=False)
+        app = _make_app(tmp_path, probe_fn=probe_fn, first_run=True)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert isinstance(app.screen, FirstRunDialog)
+            await pilot.click("#first-run-yes")
+            await pilot.pause()
+            await pilot.press("s")
 
-        toml_path = isolated_config / "parallect" / "config.toml"
+        toml_path = tmp_path / "parallect" / "config.toml"
         assert toml_path.exists()
         data = _load_toml(toml_path)
         assert data["synthesis"]["backend"] == "lmstudio"
         assert data["embeddings"]["backend"] == "lmstudio"
 
-    def test_only_ollama_reachable_sets_backend(self, isolated_config, monkeypatch):
-        fake = lambda timeout=0.4: LocalProbeResult(lmstudio_reachable=False, ollama_reachable=True)
-        monkeypatch.setattr(probe_mod, "probe_local_backends", fake)
-        monkeypatch.setattr("parallect.backends.probe.probe_local_backends", fake)
-        runner = CliRunner()
-        input_stream = "\n" + _SAVE_AND_EXIT
-        result = runner.invoke(app, ["config"], input=input_stream)
-        assert result.exit_code == 0, result.output
+    @pytest.mark.asyncio
+    async def test_only_ollama_reachable_sets_backend(self, tmp_path: Path) -> None:
+        probe_fn = lambda: LocalProbeResult(lmstudio_reachable=False, ollama_reachable=True)
+        app = _make_app(tmp_path, probe_fn=probe_fn, first_run=True)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert isinstance(app.screen, FirstRunDialog)
+            await pilot.click("#first-run-yes")
+            await pilot.pause()
+            await pilot.press("s")
 
-        data = _load_toml(isolated_config / "parallect" / "config.toml")
+        data = _load_toml(tmp_path / "parallect" / "config.toml")
         assert data["synthesis"]["backend"] == "ollama"
         assert data["embeddings"]["backend"] == "ollama"
 
-    def test_user_declines_local_default(self, isolated_config, monkeypatch):
-        fake = lambda timeout=0.4: LocalProbeResult(lmstudio_reachable=True, ollama_reachable=False)
-        monkeypatch.setattr(probe_mod, "probe_local_backends", fake)
-        monkeypatch.setattr("parallect.backends.probe.probe_local_backends", fake)
-        runner = CliRunner()
-        # 'n' declines local → save and exit
-        input_stream = "n\n" + _SAVE_AND_EXIT
-        result = runner.invoke(app, ["config"], input=input_stream)
-        assert result.exit_code == 0, result.output
+    @pytest.mark.asyncio
+    async def test_user_declines_local_default(self, tmp_path: Path) -> None:
+        probe_fn = lambda: LocalProbeResult(lmstudio_reachable=True, ollama_reachable=False)
+        app = _make_app(tmp_path, probe_fn=probe_fn, first_run=True)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert isinstance(app.screen, FirstRunDialog)
+            await pilot.click("#first-run-no")
+            await pilot.pause()
+            await pilot.press("s")
 
-        data = _load_toml(isolated_config / "parallect" / "config.toml")
+        data = _load_toml(tmp_path / "parallect" / "config.toml")
         assert "synthesis" not in data or not data.get("synthesis", {}).get("backend")
         assert "embeddings" not in data or not data.get("embeddings", {}).get("backend")
 
-    def test_neither_reachable_save_empty(self, isolated_config, monkeypatch):
-        """No local detected, user just saves and exits → empty config is valid."""
-        fake = lambda timeout=0.4: LocalProbeResult(lmstudio_reachable=False, ollama_reachable=False)
-        monkeypatch.setattr(probe_mod, "probe_local_backends", fake)
-        monkeypatch.setattr("parallect.backends.probe.probe_local_backends", fake)
-        runner = CliRunner()
-        input_stream = _SAVE_AND_EXIT
-        result = runner.invoke(app, ["config"], input=input_stream)
-        assert result.exit_code == 0, result.output
-        toml_path = isolated_config / "parallect" / "config.toml"
+    @pytest.mark.asyncio
+    async def test_neither_reachable_save_empty(self, tmp_path: Path) -> None:
+        """No local detected, user just saves and exits -> empty config is valid."""
+        probe_fn = lambda: LocalProbeResult(lmstudio_reachable=False, ollama_reachable=False)
+        app = _make_app(tmp_path, probe_fn=probe_fn, first_run=True)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            # Dismiss the "nothing detected" dialog
+            await pilot.click("#nothing-ok")
+            await pilot.pause()
+            await pilot.press("s")
+
+        toml_path = tmp_path / "parallect" / "config.toml"
         assert toml_path.exists()
 
-    def test_menu_configure_synthesis(self, isolated_config, monkeypatch):
-        """User picks synthesis backend via menu option 1."""
-        fake = lambda timeout=0.4: LocalProbeResult(lmstudio_reachable=False, ollama_reachable=False)
-        monkeypatch.setattr(probe_mod, "probe_local_backends", fake)
-        monkeypatch.setattr("parallect.backends.probe.probe_local_backends", fake)
-        runner = CliRunner()
-        # Menu: 1 (synthesis) → 3 (anthropic) → model prompt → save
-        input_stream = "1\n3\nclaude-sonnet-4\nANTHROPIC_API_KEY\ns\n"
-        result = runner.invoke(app, ["config"], input=input_stream)
-        assert result.exit_code == 0, result.output
-        data = _load_toml(isolated_config / "parallect" / "config.toml")
+    @pytest.mark.asyncio
+    async def test_menu_configure_synthesis(self, tmp_path: Path) -> None:
+        """User picks synthesis backend via menu."""
+        app = _make_app(tmp_path)
+        async with app.run_test() as pilot:
+            from textual.widgets import Input, OptionList, RadioSet
+
+            option_list = app.query_one("#main-menu", OptionList)
+            option_list.focus()
+            await pilot.press("enter")
+            await pilot.pause()
+            assert isinstance(app.screen, BackendScreen)
+
+            # Select anthropic (index 2)
+            radio_set = app.screen.query_one("#backend-radios", RadioSet)
+            radio_set.focus()
+            for _ in range(2):
+                await pilot.press("down")
+            await pilot.press("enter")
+            await pilot.pause()
+
+            # Set model
+            model_input = app.screen.query_one("#model-input", Input)
+            model_input.value = "claude-sonnet-4"
+
+            # Set API key env
+            env_input = app.screen.query_one("#api-key-env-input", Input)
+            env_input.value = "ANTHROPIC_API_KEY"
+            await pilot.pause()
+
+            await pilot.click("#apply-btn")
+            await pilot.pause()
+            await pilot.press("s")
+
+        data = _load_toml(tmp_path / "parallect" / "config.toml")
         assert data["synthesis"]["backend"] == "anthropic"
         assert data["synthesis"]["model"] == "claude-sonnet-4"
