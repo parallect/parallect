@@ -332,3 +332,162 @@ class TestManifestFields:
         )
         assert bundle.manifest.has_attestations is False
         assert not bundle.attestations
+
+
+# ---------------------------------------------------------------------------
+# Evidence graph tests
+# ---------------------------------------------------------------------------
+
+
+class CitingProvider:
+    """Mock provider that returns a caller-supplied citations list."""
+
+    def __init__(self, name: str, citations: list[dict]):
+        self._name = name
+        self._citations = citations
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    async def research(self, query: str) -> ProviderResult:
+        return ProviderResult(
+            provider=self._name,
+            status="completed",
+            report_markdown=f"# Report from {self._name}",
+            citations=list(self._citations),
+            cost_usd=0.01,
+            duration_seconds=0.1,
+        )
+
+    def estimate_cost(self, query: str) -> float:
+        return 0.01
+
+    def is_available(self) -> bool:
+        return True
+
+
+class TestEvidenceGraph:
+    """Provider-level evidence graph linking claims to sources."""
+
+    @pytest.mark.asyncio
+    async def test_graph_has_one_edge_per_claim_provider_source(self):
+        """One edge per (claim × supporting provider × that provider's sources)."""
+        alpha_citations = [
+            {"url": "https://a.example.com/one", "title": "A1"},
+            {"url": "https://a.example.com/two", "title": "A2"},
+        ]
+        beta_citations = [
+            {"url": "https://b.example.com/one", "title": "B1"},
+        ]
+
+        # Mock claims extraction: 2 claims, different supporting providers.
+        canned_claims = [
+            {
+                "id": "claim_001",
+                "content": "Alpha-only claim",
+                "providers_supporting": ["alpha"],
+                "providers_contradicting": [],
+                "category": "fact",
+            },
+            {
+                "id": "claim_002",
+                "content": "Both providers support this",
+                "providers_supporting": ["alpha", "beta"],
+                "providers_contradicting": [],
+                "category": "fact",
+            },
+        ]
+
+        mock_extract = AsyncMock(return_value=canned_claims)
+
+        with patch(
+            "parallect.synthesis.extract.extract_claims", mock_extract
+        ):
+            bundle = await research(
+                query="evidence test",
+                providers=[
+                    CitingProvider("alpha", alpha_citations),
+                    CitingProvider("beta", beta_citations),
+                ],
+                no_synthesis=True,
+            )
+
+        # Sanity: claims + sources were both built.
+        assert bundle.claims is not None
+        assert len(bundle.claims.claims) == 2
+        assert bundle.sources is not None
+        assert len(bundle.sources.sources) == 3  # a1, a2, b1 (no URL overlap)
+
+        # Evidence graph should be present.
+        assert bundle.evidence_graph is not None
+        assert bundle.manifest.has_evidence_graph is True
+
+        edges = bundle.evidence_graph.evidence
+        # claim_001: alpha supports, alpha cited 2 sources → 2 edges
+        # claim_002: alpha + beta support. alpha cited 2, beta cited 1 → 3 edges
+        assert len(edges) == 5
+
+        # All relations are "supports".
+        assert all(e.relation == "supports" for e in edges)
+
+        # Every edge's discovered_by_provider is one of the supporting providers
+        # for its claim.
+        claim_supporters = {c.id: set(c.providers_supporting) for c in bundle.claims.claims}
+        for e in edges:
+            assert e.discovered_by_provider in claim_supporters[e.claim_id]
+
+        # Every edge's source_id resolves to a source that was cited by that edge's provider.
+        source_index = {s.id: s for s in bundle.sources.sources}
+        for e in edges:
+            src = source_index[e.source_id]
+            assert e.discovered_by_provider in (src.cited_by_providers or [])
+
+    @pytest.mark.asyncio
+    async def test_no_graph_when_claims_missing(self):
+        """If claims extraction returns nothing, no evidence graph is emitted."""
+        mock_extract = AsyncMock(return_value=[])
+
+        with patch(
+            "parallect.synthesis.extract.extract_claims", mock_extract
+        ):
+            bundle = await research(
+                query="evidence test",
+                providers=[
+                    CitingProvider(
+                        "alpha", [{"url": "https://example.com/x", "title": "X"}]
+                    ),
+                ],
+                no_synthesis=True,
+            )
+
+        assert bundle.claims is None
+        assert bundle.evidence_graph is None
+        assert bundle.manifest.has_evidence_graph is False
+
+    @pytest.mark.asyncio
+    async def test_no_graph_when_sources_missing(self):
+        """If no provider emits citations, there are no sources and no graph."""
+        canned_claims = [
+            {
+                "id": "claim_001",
+                "content": "A claim",
+                "providers_supporting": ["alpha"],
+                "providers_contradicting": [],
+                "category": "fact",
+            }
+        ]
+        mock_extract = AsyncMock(return_value=canned_claims)
+
+        with patch(
+            "parallect.synthesis.extract.extract_claims", mock_extract
+        ):
+            bundle = await research(
+                query="evidence test",
+                providers=[MockProvider("alpha")],  # no citations
+                no_synthesis=True,
+            )
+
+        assert bundle.sources is None
+        assert bundle.evidence_graph is None
+        assert bundle.manifest.has_evidence_graph is False
