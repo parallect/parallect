@@ -673,8 +673,8 @@ class TestPlugins:
             await pilot.press("enter")
             await pilot.pause()
 
-            plugin_list = app.screen.query_one("#plugin-list", Static)
-            text = str(plugin_list.content)
+            plugin_entries = app.screen.query_one("#plugin-entries", OptionList)
+            text = str(plugin_entries.get_option_at_index(0).prompt)
             assert "filesystem" in text
             assert "research" in text
             await pilot.press("escape")

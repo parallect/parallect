@@ -202,47 +202,65 @@ class FilesystemPlugin:
         changed, skipped = self._walk_for_changes(known_files)
 
         indexed_chunks = 0
-        for file_path, file_meta in changed:
-            try:
-                content = file_path.read_text(encoding="utf-8", errors="replace")
-            except OSError as exc:
-                logger.warning("skipping unreadable file %s: %s", file_path, exc)
-                skipped += 1
-                continue
-            chunks = _chunk_text(content)
-            if not chunks:
-                self._record_file(db_path, file_path, file_meta, chunk_count=0)
-                continue
 
-            rows: list[_ChunkRow] = []
-            title = _extract_title(content, file_path.name)
-            rel_path = str(file_path)
-            for idx, chunk in enumerate(chunks):
-                rows.append(
-                    _ChunkRow(
-                        chunk_id=f"{rel_path}#{idx}",
-                        path=rel_path,
-                        chunk_idx=idx,
-                        title=title,
-                        content=chunk,
-                        file_hash=file_meta["hash"],
+        # Progress bar — visible when stdout is a terminal
+        from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, MofNCompleteColumn
+        progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            transient=True,
+        )
+        with progress:
+            task = progress.add_task(
+                f"Indexing {len(changed)} files", total=len(changed)
+            )
+            for file_path, file_meta in changed:
+                progress.update(task, description=f"[dim]{file_path.name}[/dim]")
+                try:
+                    content = file_path.read_text(encoding="utf-8", errors="replace")
+                except OSError as exc:
+                    logger.warning("skipping unreadable file %s: %s", file_path, exc)
+                    skipped += 1
+                    progress.advance(task)
+                    continue
+                chunks = _chunk_text(content)
+                if not chunks:
+                    self._record_file(db_path, file_path, file_meta, chunk_count=0)
+                    progress.advance(task)
+                    continue
+
+                rows: list[_ChunkRow] = []
+                title = _extract_title(content, file_path.name)
+                rel_path = str(file_path)
+                for idx, chunk in enumerate(chunks):
+                    rows.append(
+                        _ChunkRow(
+                            chunk_id=f"{rel_path}#{idx}",
+                            path=rel_path,
+                            chunk_idx=idx,
+                            title=title,
+                            content=chunk,
+                            file_hash=file_meta["hash"],
+                        )
                     )
-                )
 
-            vectors: list[list[float]] = []
-            for batch_start in range(0, len(rows), EMBED_BATCH):
-                batch = [r.content for r in rows[batch_start : batch_start + EMBED_BATCH]]
-                batch_vecs = await embeddings.embed(batch)
-                vectors.extend(batch_vecs)
+                vectors: list[list[float]] = []
+                for batch_start in range(0, len(rows), EMBED_BATCH):
+                    batch = [r.content for r in rows[batch_start : batch_start + EMBED_BATCH]]
+                    batch_vecs = await embeddings.embed(batch)
+                    vectors.extend(batch_vecs)
 
-            if len(vectors) != len(rows):
-                raise RuntimeError(
-                    f"embed() returned {len(vectors)} vectors for {len(rows)} chunks"
-                )
+                if len(vectors) != len(rows):
+                    raise RuntimeError(
+                        f"embed() returned {len(vectors)} vectors for {len(rows)} chunks"
+                    )
 
-            self._replace_chunks(db_path, file_path=rel_path, rows=rows, vectors=vectors)
-            self._record_file(db_path, file_path, file_meta, chunk_count=len(rows))
-            indexed_chunks += len(rows)
+                self._replace_chunks(db_path, file_path=rel_path, rows=rows, vectors=vectors)
+                self._record_file(db_path, file_path, file_meta, chunk_count=len(rows))
+                indexed_chunks += len(rows)
+                progress.advance(task)
 
         # Persist embeddings metadata so later runs can detect dim/model
         # changes. Fall back to the dims of the most recently stored vector
