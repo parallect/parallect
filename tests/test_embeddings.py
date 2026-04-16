@@ -113,9 +113,10 @@ class TestEmbedDimensions:
     @pytest.mark.asyncio
     async def test_known_model_skips_probe(self, monkeypatch):
         monkeypatch.setenv("OPENAI_API_KEY", "sk-1")
+        s = _Settings(embeddings_backend="openai", embeddings_model="text-embedding-3-small")
         # No HTTP call expected for known models.
         with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mpost:
-            dim = await embed_dimensions()
+            dim = await embed_dimensions(settings=s)
         assert dim == 1536
         mpost.assert_not_called()
 

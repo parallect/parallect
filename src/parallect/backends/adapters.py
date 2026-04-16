@@ -59,7 +59,7 @@ async def call_openai_compat_chat(
     prompt: str,
     system_prompt: str,
     *,
-    timeout: float = 120.0,
+    timeout: float = 300.0,
     extra_headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """POST /chat/completions on any OpenAI-compatible server.
@@ -165,7 +165,7 @@ async def call_anthropic_chat(
     prompt: str,
     system_prompt: str,
     *,
-    timeout: float = 120.0,
+    timeout: float = 300.0,
     max_tokens: int = 8192,
 ) -> dict[str, Any]:
     if not spec.api_key:
@@ -224,7 +224,7 @@ async def call_gemini_chat(
     prompt: str,
     system_prompt: str,
     *,
-    timeout: float = 120.0,
+    timeout: float = 300.0,
 ) -> dict[str, Any]:
     if not spec.api_key:
         raise ValueError(

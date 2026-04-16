@@ -51,6 +51,15 @@ class TestSynthesisResolutionDefaults:
     def test_no_settings_defaults_to_anthropic(self, monkeypatch):
         monkeypatch.delenv("PARALLECT_SYNTHESIS_BASE_URL", raising=False)
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-123")
+        # Mock auto-loaded settings so the test doesn't pick up the dev config
+        _fake = type("S", (), {
+            "synthesis_backend": "", "synthesis_model": "",
+            "synthesis_base_url": "", "synthesis_api_key_env": "",
+        })()
+        monkeypatch.setattr(
+            "parallect.config_mod.settings.ParallectSettings",
+            type("F", (), {"load": classmethod(lambda cls: _fake)}),
+        )
         spec = resolve_synthesis_backend()
         assert spec.kind == "anthropic"
         assert spec.base_url == DEFAULT_BASE_URLS["anthropic"]
@@ -178,6 +187,14 @@ class TestSynthesisApiKey:
 class TestEmbeddingsResolutionDefaults:
     def test_default_openai(self, monkeypatch):
         monkeypatch.setenv("OPENAI_API_KEY", "sk-123")
+        _fake = type("S", (), {
+            "embeddings_backend": "", "embeddings_model": "",
+            "embeddings_base_url": "", "embeddings_api_key_env": "",
+        })()
+        monkeypatch.setattr(
+            "parallect.config_mod.settings.ParallectSettings",
+            type("F", (), {"load": classmethod(lambda cls: _fake)}),
+        )
         spec = resolve_embeddings_backend()
         assert spec.kind == "openai"
         assert spec.base_url == DEFAULT_BASE_URLS["openai"]

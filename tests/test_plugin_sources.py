@@ -127,12 +127,16 @@ class TestFanOut:
 
 
 class TestFilesystemRequiresPath:
-    async def test_filesystem_no_path_raises(self):
+    async def test_filesystem_no_path_raises(self, monkeypatch):
         """Explicit failure when user asks for filesystem without config."""
         fake = FakeDS(name="filesystem")
         register(fake)
 
-        # No config file in user config dir -> plugin has no path -> error.
+        # Mock away the TOML config so the plugin truly has no path.
+        monkeypatch.setattr(
+            "parallect.orchestrator.plugin_sources._extract_plugin_configs",
+            lambda _: {},
+        )
         with pytest.raises(PluginError, match="has no `path` configured"):
             await run_plugin_sources("q", "filesystem")
 

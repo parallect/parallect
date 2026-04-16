@@ -498,9 +498,14 @@ async def _run_byok(
         effective_providers_str, local, settings, deep=tier_cfg.deep
     )
 
-    if not provider_instances:
+    # Allow running with zero web providers if data-source plugins are
+    # providing content (e.g. --sources filesystem). A local-only researcher
+    # with Obsidian + LM Studio should never need provider API keys.
+    has_plugin_sources = bool(sources)
+    if not provider_instances and not has_plugin_sources:
         console.print(
-            "[red]No providers available. Run 'parallect config' to set up API keys.[/red]"
+            "[red]No providers available. Run 'parallect config' to set up API keys,[/red]\n"
+            "[red]or use --sources filesystem to research against local files.[/red]"
         )
         raise typer.Exit(1)
 
@@ -510,7 +515,17 @@ async def _run_byok(
         f"{'s' if len(provider_instances) != 1 else ''}, tier: {tier_cfg.name})"
     )
 
-    synth_model = synthesize_with or settings.synthesize_with
+    # Prefer the new [synthesis] config if set; fall back to legacy synthesize_with
+    synth_model = synthesize_with
+    if not synth_model:
+        backend = getattr(settings, "synthesis_backend", "")
+        model = getattr(settings, "synthesis_model", "")
+        if backend and model:
+            synth_model = f"{backend}/{model}"
+        elif backend:
+            synth_model = backend
+        else:
+            synth_model = settings.synthesize_with
     if no_synthesis:
         synth_model = None
 
