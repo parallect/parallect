@@ -1,0 +1,33 @@
+# LiteLLM proxy for Parallect integration tests.
+#
+# Not shipped to users. Used only by:
+#
+#   PARALLECT_INTEGRATION=1 uv run pytest tests/integration/
+#
+# Usage:
+#
+#   docker compose -f tests/integration/docker-compose.yml up -d
+#   PARALLECT_INTEGRATION=1 LITELLM_URL=http://localhost:14000 \
+#     uv run pytest tests/integration/
+#   docker compose -f tests/integration/docker-compose.yml down
+#
+# Backing models: the default config.yaml uses the Ollama "llama3.2" model,
+# so it works fully offline if you have Ollama running locally. To test
+# against a real cloud provider, add an OPENAI_API_KEY to the env.
+
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    ports:
+      - "14000:4000"
+    environment:
+      - LITELLM_LOG=ERROR
+      - LITELLM_MASTER_KEY=sk-parallect-test
+    volumes:
+      - ./litellm.config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--detailed_debug"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health/liveliness"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

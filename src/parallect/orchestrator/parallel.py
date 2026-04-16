@@ -138,6 +138,7 @@ async def research(
     query: str,
     providers: list[AsyncResearchProvider],
     synthesize_with: str | None = "anthropic",
+    synthesis_base_url: str | None = None,
     extract_claims_flag: bool = True,
     budget_cap_usd: float | None = None,
     timeout_per_provider: float = 120.0,
@@ -272,7 +273,12 @@ async def research(
                 o.result for o in outcomes if o.result and o.result.status != "failed"
             ]
             synth_result = await synthesize(
-                query, results, model=synthesize_with, api_key=synth_api_key,
+                query,
+                results,
+                model=synthesize_with,
+                api_key=synth_api_key,
+                base_url=synthesis_base_url,
+                settings=settings,
             )
             synthesis_md = synth_result.report_markdown
             has_synthesis = True
