@@ -167,6 +167,26 @@ def research_cmd(
         None, "--sources",
         help="Comma-separated data sources (e.g. prxhub,filesystem:notes).",
     ),
+    iterative: bool = typer.Option(
+        False, "--iterative",
+        help="[BYOK] Run agentic iterative research loop (planner/evaluator).",
+    ),
+    max_iterations: int = typer.Option(
+        3, "--max-iterations",
+        help="[BYOK] Max iterations for --iterative mode.",
+    ),
+    iteration_budget_usd: float | None = typer.Option(
+        None, "--iteration-budget-usd",
+        help="[BYOK] Hard cost cap for iterative loop (USD).",
+    ),
+    planner_model: str | None = typer.Option(
+        None, "--planner-model",
+        help="[BYOK] LLM model for the iterative planner.",
+    ),
+    evaluator_model: str | None = typer.Option(
+        None, "--evaluator-model",
+        help="[BYOK] LLM model for the iterative evaluator.",
+    ),
     deep: bool = typer.Option(
         False, "--deep",
         help="[DEPRECATED] Alias for --tier deep. Use --tier instead.",
@@ -220,6 +240,11 @@ def research_cmd(
             timeout=timeout,
             publish_to=publish_to,
             sources=sources,
+            iterative=iterative,
+            max_iterations=max_iterations,
+            iteration_budget_usd=iteration_budget_usd,
+            planner_model=planner_model,
+            evaluator_model=evaluator_model,
         ))
 
 
@@ -452,6 +477,11 @@ async def _run_byok(
     timeout: float,
     publish_to: str | None = None,
     sources: str | None = None,
+    iterative: bool = False,
+    max_iterations: int = 3,
+    iteration_budget_usd: float | None = None,
+    planner_model: str | None = None,
+    evaluator_model: str | None = None,
 ) -> None:
     from parallect.config_mod.settings import ParallectSettings
 
@@ -492,6 +522,28 @@ async def _run_byok(
     console.print(f"[dim]Providers: {', '.join(p.name for p in provider_instances)}[/dim]")
     if synth_model:
         console.print(f"[dim]Synthesis: {synth_model}[/dim]")
+
+    if iterative:
+        await _run_byok_iterative(
+            query=query,
+            provider_instances=provider_instances,
+            synth_model=synth_model,
+            synthesis_base_url=synthesis_base_url,
+            no_synthesis=no_synthesis,
+            budget_cap=budget_cap,
+            out_path=out_path,
+            no_sign=no_sign,
+            timeout=timeout,
+            publish_to=publish_to,
+            sources=sources,
+            settings=settings,
+            tier_cfg=tier_cfg,
+            max_iterations=max_iterations,
+            iteration_budget_usd=iteration_budget_usd,
+            planner_model=planner_model,
+            evaluator_model=evaluator_model,
+        )
+        return
 
     with Progress(
         SpinnerColumn(),
@@ -594,3 +646,77 @@ def _resolve_providers(
             console.print(f"[yellow]Unknown provider: {name}[/yellow]")
 
     return instances
+
+
+
+# ---------------------------------------------------------------------------
+# Iterative research path
+# ---------------------------------------------------------------------------
+
+
+async def _run_byok_iterative(
+    *,
+    query: str,
+    provider_instances: list,
+    synth_model: str | None,
+    synthesis_base_url: str | None,
+    no_synthesis: bool,
+    budget_cap: float | None,
+    out_path: str | Path | None,
+    no_sign: bool,
+    timeout: float,
+    publish_to: str | None,
+    sources: str | None,
+    settings: object | None,
+    tier_cfg: TierConfig,
+    max_iterations: int,
+    iteration_budget_usd: float | None,
+    planner_model: str | None,
+    evaluator_model: str | None,
+) -> None:
+    from parallect.research_loop import run_loop
+
+    effective_budget = iteration_budget_usd or budget_cap or tier_cfg.budget_cap_usd
+
+    console.print(f"[bold cyan]Iterative mode[/bold cyan] (max {max_iterations} iterations, budget ${effective_budget:.2f})")
+
+    status_lines: list[str] = []
+
+    def on_status(msg: str) -> None:
+        status_lines.append(msg)
+        console.print(f"  [dim]{msg}[/dim]")
+
+    result = await run_loop(
+        query,
+        provider_instances,
+        max_iterations=max_iterations,
+        budget_cap_usd=effective_budget,
+        planner_model=planner_model,
+        evaluator_model=evaluator_model,
+        synthesize_with=None if no_synthesis else synth_model,
+        synthesis_base_url=synthesis_base_url,
+        sources=sources,
+        settings=settings,
+        timeout=timeout,
+        on_status=on_status,
+    )
+
+    console.print(f"\n[green]Research loop complete[/green]")
+    console.print(f"  Iterations: {len(result.iterations)}")
+    console.print(f"  Stop reason: {result.stop_reason}")
+    console.print(f"  Total results: {len(result.all_results)}")
+    console.print(f"  Cost: ${result.total_cost_usd:.4f}")
+    if result.synthesis:
+        console.print(f"  Synthesis: yes ({result.synthesis.model})")
+
+    if out_path:
+        import json
+        provenance_path = Path(str(out_path)).parent / "loop.json"
+        provenance_path.write_text(
+            json.dumps(result.provenance_dict(), indent=2),
+            encoding="utf-8",
+        )
+        console.print(f"  Provenance: {provenance_path}")
+
+    if publish_to and out_path:
+        _publish_to_collection(Path(str(out_path)), publish_to)
