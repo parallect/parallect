@@ -239,19 +239,52 @@ async def research(
         )
         r = outcome.result
 
-        # Build per-provider citations list
+        # Build per-provider citations list (dedupe by canonical URL).
+        # Perplexity and others sometimes chunk the same URL across multiple
+        # citation indices; deduplicate here so the source registry and any
+        # downstream readers see a clean, contiguous 1-based index.
         citations = None
         if r.citations:
+            from parallect.synthesis.extract import _canonical_url
+
+            seen: dict[str, dict] = {}
+            order: list[str] = []
+            for c in r.citations:
+                url = c.get("url", "")
+                if not url:
+                    continue
+                canonical = _canonical_url(url)
+                if canonical in seen:
+                    # Merge: keep first title/snippet, but swap in a strictly
+                    # longer snippet from a later chunk of the same source.
+                    existing = seen[canonical]
+                    later_snippet = c.get("snippet")
+                    if (
+                        later_snippet
+                        and (
+                            not existing.get("snippet")
+                            or len(later_snippet) > len(existing.get("snippet") or "")
+                        )
+                    ):
+                        existing["snippet"] = later_snippet
+                    continue
+                seen[canonical] = {
+                    "url": url,
+                    "title": c.get("title"),
+                    "snippet": c.get("snippet"),
+                    "domain": c.get("domain"),
+                }
+                order.append(canonical)
+
             citations = [
                 Citation(
-                    index=i,
-                    url=c.get("url", ""),
-                    title=c.get("title"),
-                    snippet=c.get("snippet"),
-                    domain=c.get("domain"),
+                    index=i + 1,
+                    url=seen[canonical]["url"],
+                    title=seen[canonical]["title"],
+                    snippet=seen[canonical]["snippet"],
+                    domain=seen[canonical]["domain"],
                 )
-                for i, c in enumerate(r.citations)
-                if c.get("url")
+                for i, canonical in enumerate(order)
             ]
 
         # Build per-provider meta
