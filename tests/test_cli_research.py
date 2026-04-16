@@ -415,3 +415,64 @@ class TestEnhanceCli:
         )
         assert result.exit_code == 0
         assert "enhancement complete" in result.stdout.lower()
+
+
+class TestResolveProvidersTimeout:
+    """--timeout must flow into each provider's HTTP client, not just the
+    orchestrator's asyncio wrapper. A 120s httpx timeout bites before a 600s
+    asyncio timeout, silently returning a failed provider result."""
+
+    def _fake_settings(self):
+        class _S:
+            perplexity_api_key = "pplx-test"
+            google_api_key = "g"
+            openai_api_key = "o"
+            xai_api_key = "x"
+            anthropic_api_key = "a"
+            providers = ["perplexity", "gemini", "openai", "grok", "anthropic"]
+            ollama_host = "http://localhost:11434"
+            ollama_default_model = "llama3.2"
+            lmstudio_host = "http://localhost:1234"
+            lmstudio_default_model = "default"
+
+        return _S()
+
+    def test_timeout_propagates_to_all_providers(self):
+        from parallect.cli.research import _resolve_providers
+
+        instances = _resolve_providers(
+            providers_str="perplexity,gemini,openai,grok,anthropic",
+            local=False,
+            settings=self._fake_settings(),
+            timeout=450.0,
+        )
+        assert len(instances) == 5
+        for inst in instances:
+            assert inst.timeout == 450.0, (
+                f"{inst.name} has timeout={inst.timeout}, expected 450.0"
+            )
+
+    def test_default_timeout_is_600_when_none(self):
+        """Covers the case where the CLI default (120s) does NOT override —
+        previously Perplexity's own 120s default cut off sonar-deep-research
+        runs that legitimately take 2–5 minutes."""
+        from parallect.cli.research import _resolve_providers
+
+        instances = _resolve_providers(
+            providers_str="perplexity",
+            local=False,
+            settings=self._fake_settings(),
+            timeout=None,
+        )
+        assert instances[0].timeout == 600.0
+
+    def test_zero_timeout_falls_back_to_default(self):
+        from parallect.cli.research import _resolve_providers
+
+        instances = _resolve_providers(
+            providers_str="perplexity",
+            local=False,
+            settings=self._fake_settings(),
+            timeout=0.0,
+        )
+        assert instances[0].timeout == 600.0

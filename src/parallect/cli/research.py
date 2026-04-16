@@ -495,7 +495,8 @@ async def _run_byok(
     effective_budget = budget_cap if budget_cap is not None else tier_cfg.budget_cap_usd
 
     provider_instances = _resolve_providers(
-        effective_providers_str, local, settings, deep=tier_cfg.deep
+        effective_providers_str, local, settings,
+        deep=tier_cfg.deep, timeout=timeout,
     )
 
     # Allow running with zero web providers if data-source plugins are
@@ -611,8 +612,16 @@ def _resolve_providers(
     settings: ParallectSettings,
     *,
     deep: bool = False,
+    timeout: float | None = None,
 ) -> list:
-    """Resolve provider names to provider instances."""
+    """Resolve provider names to provider instances.
+
+    ``timeout`` (seconds) flows into each provider's internal HTTP client so
+    that slow deep-research endpoints (e.g. Perplexity ``sonar-deep-research``,
+    which can take 2–5 minutes) aren't cut off by the default per-provider
+    httpx timeout. Defaults to 600s when unset — generous enough for every
+    deep-research model on the market without being infinite.
+    """
     from parallect.providers.anthropic import AnthropicProvider
     from parallect.providers.gemini import GeminiProvider
     from parallect.providers.grok import GrokProvider
@@ -621,6 +630,8 @@ def _resolve_providers(
     from parallect.providers.ollama import OllamaProvider
     from parallect.providers.openai_dr import OpenAIDRProvider
     from parallect.providers.perplexity import PerplexityProvider
+
+    t = timeout if (timeout and timeout > 0) else 600.0
 
     if local:
         return [OllamaProvider(model=settings.ollama_default_model, host=settings.ollama_host)]
@@ -635,11 +646,11 @@ def _resolve_providers(
 
     instances = []
     provider_map = {
-        "perplexity": lambda: PerplexityProvider(api_key=settings.perplexity_api_key),
-        "gemini": lambda: GeminiProvider(api_key=settings.google_api_key, deep=deep),
-        "openai": lambda: OpenAIDRProvider(api_key=settings.openai_api_key, deep=deep),
-        "grok": lambda: GrokProvider(api_key=settings.xai_api_key, deep=deep),
-        "anthropic": lambda: AnthropicProvider(api_key=settings.anthropic_api_key, deep=deep),
+        "perplexity": lambda: PerplexityProvider(api_key=settings.perplexity_api_key, timeout=t),
+        "gemini": lambda: GeminiProvider(api_key=settings.google_api_key, deep=deep, timeout=t),
+        "openai": lambda: OpenAIDRProvider(api_key=settings.openai_api_key, deep=deep, timeout=t),
+        "grok": lambda: GrokProvider(api_key=settings.xai_api_key, deep=deep, timeout=t),
+        "anthropic": lambda: AnthropicProvider(api_key=settings.anthropic_api_key, deep=deep, timeout=t),
         "ollama": lambda: OllamaProvider(
             model=settings.ollama_default_model, host=settings.ollama_host
         ),
