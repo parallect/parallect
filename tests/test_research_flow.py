@@ -213,7 +213,7 @@ class TestResearchFunction:
             no_synthesis=True,
         )
         assert bundle.manifest.id.startswith("prx_")
-        assert bundle.manifest.spec_version == "1.0"
+        assert bundle.manifest.spec_version == "1.1"
         assert bundle.manifest.producer.name == "parallect-oss"
         assert bundle.manifest.total_cost_usd is not None
         assert "metadata test" in bundle.query_md
@@ -231,3 +231,104 @@ class TestResearchFunction:
             no_synthesis=True,
         )
         assert bundle.manifest.total_cost_usd == pytest.approx(0.02, abs=0.001)
+
+
+class TestManifestFields:
+    """Regression tests for manifest correctness after the v1.1 alignment."""
+
+    @pytest.mark.asyncio
+    async def test_spec_version_is_1_1(self):
+        bundle = await research(
+            query="spec test",
+            providers=[MockProvider()],
+            no_synthesis=True,
+        )
+        assert bundle.manifest.spec_version == "1.1"
+
+    @pytest.mark.asyncio
+    async def test_provider_breakdown_populated_on_success(self):
+        """Every successful provider should appear in provider_breakdown."""
+        providers = [MockProvider("alpha"), MockProvider("beta")]
+        bundle = await research(
+            query="breakdown test",
+            providers=providers,
+            no_synthesis=True,
+        )
+        pb = bundle.manifest.provider_breakdown
+        assert len(pb) == 2
+        names = {e.provider for e in pb}
+        assert names == {"alpha", "beta"}
+        for entry in pb:
+            assert entry.status == "completed"
+            assert entry.duration_seconds is not None
+            assert entry.cost_usd == pytest.approx(0.01, abs=0.001)
+
+    @pytest.mark.asyncio
+    async def test_provider_breakdown_includes_failures(self):
+        """Failed providers should also be recorded so operators can diagnose."""
+        providers = [MockProvider("good"), FailingMockProvider()]
+        bundle = await research(
+            query="failure-visibility test",
+            providers=providers,
+            no_synthesis=True,
+        )
+        pb = bundle.manifest.provider_breakdown
+        statuses = {e.provider: e.status for e in pb}
+        assert statuses["good"] == "completed"
+        # FailingMockProvider raises; outcome.result is None -> status="failed"
+        assert "failing" in statuses
+        assert statuses["failing"] == "failed"
+
+    @pytest.mark.asyncio
+    async def test_total_duration_exceeds_provider_duration(self):
+        """total_duration_seconds must cover the whole orchestrator run, not
+        just the slowest provider. MockProvider reports 0.1s; the overall
+        run always takes longer than that."""
+        bundle = await research(
+            query="duration test",
+            providers=[MockProvider()],
+            no_synthesis=True,
+        )
+        assert bundle.manifest.total_duration_seconds is not None
+        assert bundle.manifest.total_duration_seconds >= 0.1
+
+    @pytest.mark.asyncio
+    async def test_has_attestations_flips_when_signed(self, tmp_path):
+        """After auto-sign produces an attestation, the manifest flag must
+        reflect that — the previous behavior silently left it False."""
+        from prx_spec.attestation.keys import generate_keypair
+
+        # generate_keypair writes private+public keys under key_dir; passing a
+        # fresh tmp path guarantees we don't collide with an existing key.
+        key_dir = tmp_path / "keys"
+        generate_keypair(key_dir)
+
+        class _FakeSettings:
+            auto_sign = True
+            key_path = str(key_dir)
+            identity = "test-user"
+            synthesis_backend = ""
+            synthesis_model = ""
+
+        bundle = await research(
+            query="signing test",
+            providers=[MockProvider()],
+            no_synthesis=True,
+            settings=_FakeSettings(),
+        )
+        assert bundle.attestations, "Expected at least one attestation"
+        assert bundle.manifest.has_attestations is True
+
+    @pytest.mark.asyncio
+    async def test_has_attestations_false_without_signing_key(self):
+        """If no signing key is available, manifest flag stays False and no
+        attestations are added (baseline — not a regression test, but a
+        complement to the flips-on-sign test)."""
+        bundle = await research(
+            query="no-sign test",
+            providers=[MockProvider()],
+            no_synthesis=True,
+            no_sign=True,
+        )
+        assert bundle.manifest.has_attestations is False
+        assert not bundle.attestations

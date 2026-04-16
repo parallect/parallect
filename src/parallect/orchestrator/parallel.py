@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from prx_spec import BundleData, ProviderData, write_bundle
-from prx_spec.models import Manifest, Producer
+from prx_spec.models import Manifest, Producer, ProviderBreakdown
 from prx_spec.models.provider import Citation, ProviderMeta, TokenUsage
 from prx_spec.models.synthesis import SynthesisMeta
 
@@ -171,8 +171,12 @@ async def research(
 
     This is the primary entry point for both the CLI and programmatic use.
     """
+    import time as _time
+
     from parallect.orchestrator.budget import BudgetEstimator
     from parallect.plugins import PluginManager
+
+    run_start = _time.monotonic()
 
     # Initialize plugins
     plugin_mgr = PluginManager()
@@ -431,20 +435,33 @@ async def research(
             import logging
             logging.getLogger("parallect").warning("Source extraction failed: %s", exc)
 
+    provider_breakdown = [
+        ProviderBreakdown(
+            provider=o.provider,
+            status=(o.result.status if o.result else "failed"),
+            duration_seconds=(o.result.duration_seconds if o.result else None),
+            cost_usd=(o.result.cost_usd if o.result else None),
+        )
+        for o in outcomes
+    ]
+
+    run_duration = round(_time.monotonic() - run_start, 2)
+
     manifest = Manifest(
-        spec_version="1.0",
+        spec_version="1.1",
         id=bundle_id,
         query=query,
         created_at=now,
         producer=Producer(name="parallect-oss", version="0.1.0"),
         providers_used=providers_used,
+        provider_breakdown=provider_breakdown,
         has_synthesis=has_synthesis,
         has_claims=claims_file is not None,
         has_sources=sources_registry is not None,
         has_evidence_graph=False,
         has_follow_ons=bool(follow_ons),
         total_cost_usd=round(total_cost, 4) if total_cost else None,
-        total_duration_seconds=round(total_duration, 2) if total_duration else None,
+        total_duration_seconds=run_duration,
         parent_bundle_id=parent_bundle_id,
     )
 
@@ -465,6 +482,9 @@ async def research(
     # Auto-sign if settings allow and key is available
     if not no_sign and settings and getattr(settings, "auto_sign", False):
         bundle = _try_sign_bundle(bundle, settings, input_report_hashes)
+        # The signer mutates bundle.attestations; flip the manifest flag to match.
+        if bundle.attestations:
+            bundle.manifest = bundle.manifest.model_copy(update={"has_attestations": True})
 
     # Write to disk if output path given
     if output:
