@@ -115,9 +115,14 @@ def download_cmd(
 
     async def _run() -> int:
         client = ParallectAPIClient(api_key=key, api_url=url, timeout=120.0)
-        data = await client.download_bundle(job_id)
-        dest.write_bytes(data)
-        return len(data)
+        ok, path = await client.download_bundle(job_id, dest)
+        if not ok:
+            raise httpx.HTTPStatusError(
+                "not yet available",
+                request=None,  # type: ignore[arg-type]
+                response=type("R", (), {"status_code": 404, "text": ""})(),  # type: ignore[arg-type]
+            )
+        return path.stat().st_size
 
     try:
         size = asyncio.run(_run())
