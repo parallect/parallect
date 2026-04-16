@@ -21,7 +21,6 @@ from parallect.cli.config_app import (
     BackendScreen,
     ConfigApp,
     FirstRunDialog,
-    load_toml,
     write_toml,
 )
 
@@ -49,7 +48,8 @@ def _make_app(
 class TestLocalFirst:
     @pytest.mark.asyncio
     async def test_lmstudio_reachable_sets_backend(self, tmp_path: Path) -> None:
-        probe_fn = lambda: LocalProbeResult(lmstudio_reachable=True, ollama_reachable=False)
+        def probe_fn():
+            return LocalProbeResult(lmstudio_reachable=True, ollama_reachable=False)
         app = _make_app(tmp_path, probe_fn=probe_fn, first_run=True)
         async with app.run_test() as pilot:
             await pilot.pause()
@@ -66,7 +66,8 @@ class TestLocalFirst:
 
     @pytest.mark.asyncio
     async def test_only_ollama_reachable_sets_backend(self, tmp_path: Path) -> None:
-        probe_fn = lambda: LocalProbeResult(lmstudio_reachable=False, ollama_reachable=True)
+        def probe_fn():
+            return LocalProbeResult(lmstudio_reachable=False, ollama_reachable=True)
         app = _make_app(tmp_path, probe_fn=probe_fn, first_run=True)
         async with app.run_test() as pilot:
             await pilot.pause()
@@ -81,7 +82,8 @@ class TestLocalFirst:
 
     @pytest.mark.asyncio
     async def test_user_declines_local_default(self, tmp_path: Path) -> None:
-        probe_fn = lambda: LocalProbeResult(lmstudio_reachable=True, ollama_reachable=False)
+        def probe_fn():
+            return LocalProbeResult(lmstudio_reachable=True, ollama_reachable=False)
         app = _make_app(tmp_path, probe_fn=probe_fn, first_run=True)
         async with app.run_test() as pilot:
             await pilot.pause()
@@ -97,7 +99,8 @@ class TestLocalFirst:
     @pytest.mark.asyncio
     async def test_neither_reachable_save_empty(self, tmp_path: Path) -> None:
         """No local detected, user just saves and exits -> empty config is valid."""
-        probe_fn = lambda: LocalProbeResult(lmstudio_reachable=False, ollama_reachable=False)
+        def probe_fn():
+            return LocalProbeResult(lmstudio_reachable=False, ollama_reachable=False)
         app = _make_app(tmp_path, probe_fn=probe_fn, first_run=True)
         async with app.run_test() as pilot:
             await pilot.pause()

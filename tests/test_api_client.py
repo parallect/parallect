@@ -14,7 +14,6 @@ from parallect.api import (
     JobFailedError,
     JobStatus,
     ParallectAPIClient,
-    ParallectAPIError,
     RateLimitError,
     ServerError,
     UnauthorizedError,

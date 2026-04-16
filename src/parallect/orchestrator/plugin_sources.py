@@ -19,6 +19,8 @@ import logging
 import time
 from dataclasses import dataclass, field
 
+import platformdirs
+
 from parallect.plugins.data_sources import (
     DataSource,
     Document,
@@ -38,9 +40,6 @@ class PluginFanOutResult:
     result: ProviderResult | None = None
     error: str | None = None
     documents: list[Document] = field(default_factory=list)
-
-
-import platformdirs
 
 
 def _extract_plugin_configs(settings: object | None) -> dict[str, list[dict]]:

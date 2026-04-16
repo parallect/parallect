@@ -16,7 +16,7 @@ if sys.version_info >= (3, 11):
 else:
     import tomli as tomllib  # type: ignore[import-not-found]
 
-from textual.widgets import Button, DataTable, Input, OptionList, RadioSet, Static
+from textual.widgets import DataTable, Input, OptionList, RadioSet
 
 from parallect.backends.probe import LocalProbeResult
 from parallect.cli.config_app import (
@@ -800,7 +800,8 @@ class TestFirstRun:
     @pytest.mark.asyncio
     async def test_lmstudio_detected_accept(self, tmp_path: Path) -> None:
         """LM Studio detected, user accepts -> synthesis+embeddings set."""
-        probe_fn = lambda: LocalProbeResult(lmstudio_reachable=True, ollama_reachable=False)
+        def probe_fn():
+            return LocalProbeResult(lmstudio_reachable=True, ollama_reachable=False)
         app = _make_app(tmp_path, probe_fn=probe_fn, first_run=True)
         async with app.run_test() as pilot:
             await pilot.pause()
@@ -817,7 +818,8 @@ class TestFirstRun:
     @pytest.mark.asyncio
     async def test_lmstudio_detected_decline(self, tmp_path: Path) -> None:
         """LM Studio detected, user declines -> no backends set."""
-        probe_fn = lambda: LocalProbeResult(lmstudio_reachable=True, ollama_reachable=False)
+        def probe_fn():
+            return LocalProbeResult(lmstudio_reachable=True, ollama_reachable=False)
         app = _make_app(tmp_path, probe_fn=probe_fn, first_run=True)
         async with app.run_test() as pilot:
             await pilot.pause()
@@ -832,7 +834,8 @@ class TestFirstRun:
     @pytest.mark.asyncio
     async def test_neither_detected_shows_warning(self, tmp_path: Path) -> None:
         """No local backend -> warning dialog, then menu accessible."""
-        probe_fn = lambda: LocalProbeResult(lmstudio_reachable=False, ollama_reachable=False)
+        def probe_fn():
+            return LocalProbeResult(lmstudio_reachable=False, ollama_reachable=False)
         app = _make_app(tmp_path, probe_fn=probe_fn, first_run=True)
         async with app.run_test() as pilot:
             await pilot.pause()

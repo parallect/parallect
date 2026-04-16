@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import time
 
-from parallect.providers import AsyncResearchProvider, ProviderResult
+from parallect.providers import ProviderResult
 from parallect.providers.hash_response import attach_response_hash
 
 

@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Any
 
 import pytest
 
 pytestmark = pytest.mark.integration
 
-from parallect.config_mod.settings import ParallectSettings
-from parallect.orchestrator.parallel import research
-from parallect.providers import ProviderResult
+from parallect.config_mod.settings import ParallectSettings  # noqa: E402
+from parallect.orchestrator.parallel import research  # noqa: E402
+from parallect.providers import ProviderResult  # noqa: E402
 
 
 class _StubProvider:

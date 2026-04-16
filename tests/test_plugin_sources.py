@@ -9,8 +9,6 @@ import pytest
 from parallect.plugins.data_sources import (
     Document,
     PluginError,
-    SourceSpec,
-    parse_sources,
     register,
     reset_registry,
 )

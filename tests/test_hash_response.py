@@ -1,7 +1,6 @@
 """Tests for response hashing utilities."""
 
 import hashlib
-from datetime import datetime, timezone
 
 from parallect.providers import ProviderResult
 from parallect.providers.hash_response import attach_response_hash, hash_response

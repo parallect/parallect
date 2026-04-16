@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from parallect.plugins.data_sources.prior_research import PriorResearchCache
 
@@ -141,7 +140,7 @@ class TestIndexNoop:
         await p.append(
             query="q", synthesis_md="body", sources_json="[]", bundle_id="b1"
         )
-        stats = await p.index(force=True)
+        await p.index(force=True)
         # After force, no records remain
         h = await p.health_check()
         assert h["total_runs"] == 0

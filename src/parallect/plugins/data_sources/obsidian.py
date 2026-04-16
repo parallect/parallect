@@ -23,7 +23,6 @@ from parallect.plugins.data_sources.filesystem import (
     _chunk_text,
     _cosine_similarity,
     _extract_title,
-    _pack_vector,
     _row_to_doc,
     _unpack_vector,
 )

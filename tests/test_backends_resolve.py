@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from parallect.backends import (
-    BackendSpec,
     DEFAULT_API_KEY_ENV,
     DEFAULT_BASE_URLS,
     DEFAULT_SYNTHESIS_MODELS,

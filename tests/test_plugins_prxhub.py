@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import httpx
-import pytest
 
 from parallect.plugins.data_sources.prxhub import PrxhubPlugin
 

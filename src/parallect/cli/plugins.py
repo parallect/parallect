@@ -203,7 +203,7 @@ def config_cmd(
     :meth:`plugin.configure`.
     """
     try:
-        plugin = get(name)
+        get(name)
     except PluginError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1)

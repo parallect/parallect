@@ -717,7 +717,7 @@ async def _run_byok_iterative(
         on_status=on_status,
     )
 
-    console.print(f"\n[green]Research loop complete[/green]")
+    console.print("\n[green]Research loop complete[/green]")
     console.print(f"  Iterations: {len(result.iterations)}")
     console.print(f"  Stop reason: {result.stop_reason}")
     console.print(f"  Total results: {len(result.all_results)}")

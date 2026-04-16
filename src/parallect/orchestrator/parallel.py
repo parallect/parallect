@@ -45,7 +45,6 @@ def _try_sign_bundle(
     key_id = get_key_id(verify_key)
 
     # Build a bundle-level attestation
-    import json
     manifest_json = bundle.manifest.model_dump_json(exclude_none=True)
     manifest_hash = compute_file_hash(manifest_json.encode("utf-8"))
 
@@ -293,7 +292,7 @@ async def research(
             err = o.error or (o.result.error if o.result else None) or "unknown error"
             error_lines.append(f"  • {o.provider}: {err}")
         raise RuntimeError(
-            f"All providers failed — no results to bundle.\n" + "\n".join(error_lines)
+            "All providers failed — no results to bundle.\n" + "\n".join(error_lines)
         )
 
     # Build bundle

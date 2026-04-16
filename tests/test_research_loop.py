@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 
 import pytest
 
 from parallect.providers import ProviderResult
 from parallect.research_loop.budget import BudgetExhausted, IterationBudget
-from parallect.research_loop.evaluator import EvaluatorResult, evaluate
-from parallect.research_loop.executor import ExecutorResult, execute
-from parallect.research_loop.loop import ResearchLoopResult, run_loop
-from parallect.research_loop.planner import PlannerResult, SubQuery, plan
+from parallect.research_loop.evaluator import evaluate
+from parallect.research_loop.executor import execute
+from parallect.research_loop.loop import run_loop
+from parallect.research_loop.planner import SubQuery, plan
 from parallect.research_loop.prompts import PROMPT_VERSION
 
 
@@ -514,7 +513,7 @@ class TestLoop:
         monkeypatch.setattr("parallect.research_loop.evaluator._dispatch", mock_eval_dispatch)
 
         messages = []
-        result = await run_loop(
+        await run_loop(
             "test query",
             [MockProvider("p1")],
             max_iterations=3,

@@ -14,8 +14,8 @@ import pytest
 
 pytestmark = pytest.mark.integration
 
-from parallect.backends import BackendSpec
-from parallect.backends.adapters import (
+from parallect.backends import BackendSpec  # noqa: E402
+from parallect.backends.adapters import (  # noqa: E402
     call_openai_compat_chat,
     call_openai_compat_embeddings,
 )

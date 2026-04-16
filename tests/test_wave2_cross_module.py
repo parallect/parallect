@@ -8,7 +8,6 @@ and chaos scenarios (500s, malformed JSON, corrupted stores, etc.).
 from __future__ import annotations
 
 import sqlite3
-import struct
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -18,12 +17,9 @@ import pytest
 from parallect.backends import BackendSpec
 from parallect.backends.adapters import BackendError
 from parallect.plugins.data_sources import (
-    DataSource,
     Document,
     IndexStats,
     PluginError,
-    SourceSpec,
-    get_registry,
     register,
     reset_registry,
 )
@@ -31,7 +27,6 @@ from parallect.plugins.data_sources.filesystem import FilesystemPlugin
 from parallect.plugins.data_sources.prior_research import PriorResearchCache
 from parallect.plugins.data_sources.prxhub import PrxhubPlugin
 from parallect.orchestrator.plugin_sources import (
-    PluginFanOutResult,
     run_plugin_sources,
 )
 from parallect.providers import ProviderResult

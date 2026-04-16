@@ -22,12 +22,9 @@ from textual.widgets import (
     Header,
     Input,
     Label,
-    ListItem,
-    ListView,
     OptionList,
     RadioButton,
     RadioSet,
-    Static,
 )
 
 # ---------------------------------------------------------------------------
@@ -312,12 +309,11 @@ class BackendScreen(Screen):
 
         with VerticalScroll(classes="form-group"):
             # Radio buttons for backend selection
-            pressed_idx = -1
             with RadioSet(id="backend-radios"):
                 for i, (key, label) in enumerate(self._backends):
                     btn = RadioButton(label, value=(key == current_backend))
                     if key == current_backend:
-                        pressed_idx = i
+                        pass
                     yield btn
 
             yield Label("Model name", classes="form-label")
