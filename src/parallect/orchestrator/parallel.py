@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
+
+_log = logging.getLogger("parallect.orchestrator")
 
 from prx_spec import BundleData, ProviderData, write_bundle
 from prx_spec.models import Manifest, Producer
@@ -147,6 +151,7 @@ async def research(
     parent_context: str | None = None,
     no_sign: bool = False,
     settings: object | None = None,
+    on_provider_failure: Callable[[ProviderOutcome], None] | None = None,
 ) -> BundleData:
     """High-level research: fan out, collect, optionally synthesize, write .prx.
 
@@ -191,6 +196,24 @@ async def research(
     for outcome in outcomes:
         if outcome.error or not outcome.result or outcome.result.status == "failed":
             failed_outcomes.append(outcome)
+            # Surface the failure — the previous behaviour silently dropped
+            # providers from the bundle, which is indistinguishable from
+            # "provider ran and returned nothing" from the user's POV.
+            err_msg = (
+                outcome.error
+                or (outcome.result.error if outcome.result else None)
+                or "unknown error"
+            )
+            _log.warning(
+                "Provider '%s' failed: %s", outcome.provider, err_msg
+            )
+            if on_provider_failure is not None:
+                try:
+                    on_provider_failure(outcome)
+                except Exception:  # noqa: BLE001 — callback must never abort the run
+                    _log.exception(
+                        "on_provider_failure callback raised; continuing"
+                    )
             continue
         # Hook: post_provider
         outcome.result = await plugin_mgr.run_post_provider(

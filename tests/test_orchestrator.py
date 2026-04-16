@@ -7,7 +7,7 @@ import asyncio
 import pytest
 
 from parallect.orchestrator.budget import BudgetEstimator, BudgetExceededError
-from parallect.orchestrator.parallel import fan_out
+from parallect.orchestrator.parallel import ProviderOutcome, fan_out, research
 from parallect.providers import ProviderResult
 
 
@@ -114,6 +114,116 @@ async def test_fan_out_partial_timeout():
 
     assert fast.result is not None
     assert slow.error is not None
+
+
+class FailedStatusProvider:
+    """Provider whose research() returns a ProviderResult(status='failed').
+
+    This is the shape every built-in provider uses when an upstream API
+    call raises (see e.g. PerplexityProvider.research's except branch).
+    """
+
+    @property
+    def name(self) -> str:
+        return "failed_status"
+
+    async def research(self, query: str) -> ProviderResult:
+        return ProviderResult(
+            provider="failed_status",
+            status="failed",
+            error="HTTP 401 Unauthorized",
+            duration_seconds=0.1,
+        )
+
+    def estimate_cost(self, query: str) -> float:
+        return 0.01
+
+    def is_available(self) -> bool:
+        return True
+
+
+@pytest.mark.asyncio
+async def test_research_surfaces_failed_status_outcome():
+    """A provider returning ProviderResult(status='failed') is not silently
+    dropped — the on_provider_failure callback fires and the bundle only
+    contains successful providers."""
+    failures: list[ProviderOutcome] = []
+
+    bundle = await research(
+        query="hi",
+        providers=[FastProvider(), FailedStatusProvider()],
+        synthesize_with=None,
+        extract_claims_flag=False,
+        no_synthesis=True,
+        on_provider_failure=failures.append,
+    )
+
+    assert bundle.manifest.providers_used == ["fast"]
+    assert [o.provider for o in failures] == ["failed_status"]
+    assert failures[0].result is not None
+    assert "401" in (failures[0].result.error or "")
+
+
+@pytest.mark.asyncio
+async def test_research_surfaces_exception_failures():
+    """A provider that raises is reported via the callback with the
+    exception text."""
+    failures: list[ProviderOutcome] = []
+
+    bundle = await research(
+        query="hi",
+        providers=[FastProvider(), FailingProvider()],
+        synthesize_with=None,
+        extract_claims_flag=False,
+        no_synthesis=True,
+        on_provider_failure=failures.append,
+    )
+
+    assert bundle.manifest.providers_used == ["fast"]
+    assert [o.provider for o in failures] == ["failing"]
+    assert "exploded" in (failures[0].error or "")
+
+
+@pytest.mark.asyncio
+async def test_research_surfaces_timeout_failures():
+    """A provider that times out is reported via the callback with a
+    'Timed out' message, and the successful provider still ends up in
+    the bundle."""
+    failures: list[ProviderOutcome] = []
+
+    bundle = await research(
+        query="hi",
+        providers=[FastProvider(), SlowProvider()],
+        synthesize_with=None,
+        extract_claims_flag=False,
+        no_synthesis=True,
+        timeout_per_provider=0.1,
+        on_provider_failure=failures.append,
+    )
+
+    assert bundle.manifest.providers_used == ["fast"]
+    assert [o.provider for o in failures] == ["slow"]
+    assert "Timed out" in (failures[0].error or "")
+
+
+@pytest.mark.asyncio
+async def test_research_logs_failures_when_no_callback(caplog):
+    """Even without a callback, failed providers are logged at WARNING
+    level via the 'parallect.orchestrator' logger, so tooling that wires
+    up logging can surface them."""
+    import logging as _logging
+
+    with caplog.at_level(_logging.WARNING, logger="parallect.orchestrator"):
+        await research(
+            query="hi",
+            providers=[FastProvider(), FailingProvider()],
+            synthesize_with=None,
+            extract_claims_flag=False,
+            no_synthesis=True,
+        )
+
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("failing" in m and "exploded" in m for m in msgs), msgs
 
 
 class TestBudgetEstimator:

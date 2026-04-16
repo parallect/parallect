@@ -67,7 +67,11 @@ class RouteDecision:
 
 
 def decide_route(
-    *, api_key_flag: str | None, local_flag: bool, byok_flag: bool, env_key: str | None
+    *,
+    api_key_flag: str | None,
+    local_flag: bool,
+    env_key: str | None,
+    byok_flag: bool = False,
 ) -> RouteDecision:
     """Pick SaaS vs BYOK.
 
@@ -445,7 +449,20 @@ async def _run_byok(
     ) as progress:
         task = progress.add_task("Running research...", total=None)
 
-        from parallect.orchestrator.parallel import research
+        from parallect.orchestrator.parallel import ProviderOutcome, research
+
+        provider_failures: list[ProviderOutcome] = []
+
+        def _record_failure(outcome: ProviderOutcome) -> None:
+            provider_failures.append(outcome)
+            err = outcome.error or (
+                outcome.result.error if outcome.result else None
+            ) or "unknown error"
+            # Surface each failure immediately so users see which provider
+            # dropped and why. Previously these were swallowed entirely.
+            console.print(
+                f"[red]Provider '{outcome.provider}' failed:[/red] {err}"
+            )
 
         try:
             bundle = await research(
@@ -458,6 +475,7 @@ async def _run_byok(
                 output=out_path,
                 no_sign=no_sign,
                 settings=settings,
+                on_provider_failure=_record_failure,
             )
         except RuntimeError as exc:
             progress.stop()
@@ -468,6 +486,9 @@ async def _run_byok(
 
     console.print(f"\n[green]Bundle created:[/green] {bundle.manifest.id}")
     console.print(f"  Providers: {', '.join(bundle.manifest.providers_used)}")
+    if provider_failures:
+        names = ", ".join(o.provider for o in provider_failures)
+        console.print(f"  [yellow]Failed providers:[/yellow] {names}")
     console.print(f"  Synthesis: {'yes' if bundle.manifest.has_synthesis else 'no'}")
     if bundle.attestations:
         console.print(f"  Signed: yes ({len(bundle.attestations)} attestation(s))")
