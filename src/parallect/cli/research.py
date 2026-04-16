@@ -133,6 +133,12 @@ def research_cmd(
         None, "--synthesize-with", "-s",
         help="[BYOK] Model for synthesis (e.g. anthropic, ollama/llama3.2)",
     ),
+    synthesis_base_url: str | None = typer.Option(
+        None, "--synthesis-base-url", envvar="PARALLECT_SYNTHESIS_BASE_URL",
+        help="[BYOK] Point synthesis at any OpenAI-compatible endpoint "
+             "(LiteLLM, OpenRouter, vLLM, self-hosted). "
+             "Precedence: flag > env > config > defaults.",
+    ),
     no_synthesis: bool = typer.Option(
         False, "--no-synthesis", help="[BYOK] Skip synthesis step"
     ),
@@ -156,6 +162,10 @@ def research_cmd(
         None, "--publish-to",
         help="After the bundle is produced, publish it to a prxhub collection. "
              "Creates the collection if it doesn't exist. Requires `prx login`.",
+    ),
+    sources: str | None = typer.Option(
+        None, "--sources",
+        help="Comma-separated data sources (e.g. prxhub,filesystem:notes).",
     ),
     deep: bool = typer.Option(
         False, "--deep",
@@ -192,6 +202,7 @@ def research_cmd(
             output_dir=output_dir,
             timeout=timeout,
             poll_interval=poll_interval,
+            sources=sources,
         ))
     else:
         asyncio.run(_run_byok(
@@ -199,6 +210,7 @@ def research_cmd(
             providers_str=providers,
             tier_cfg=tier_cfg,
             synthesize_with=synthesize_with,
+            synthesis_base_url=synthesis_base_url,
             no_synthesis=no_synthesis,
             budget_cap=budget_cap,
             output=output,
@@ -206,6 +218,8 @@ def research_cmd(
             local=local,
             no_sign=no_sign,
             timeout=timeout,
+            publish_to=publish_to,
+            sources=sources,
         ))
 
 
@@ -226,6 +240,7 @@ async def _run_saas(
     output_dir: str | None,
     timeout: float,
     poll_interval: float,
+    sources: str | None = None,
 ) -> None:
     from parallect.api import (
         InsufficientBalanceError,
@@ -427,6 +442,7 @@ async def _run_byok(
     providers_str: str | None,
     tier_cfg: TierConfig,
     synthesize_with: str | None,
+    synthesis_base_url: str | None = None,
     no_synthesis: bool,
     budget_cap: float | None,
     output: str | None,
@@ -434,6 +450,8 @@ async def _run_byok(
     local: bool,
     no_sign: bool,
     timeout: float,
+    publish_to: str | None = None,
+    sources: str | None = None,
 ) -> None:
     from parallect.config_mod.settings import ParallectSettings
 
@@ -489,12 +507,14 @@ async def _run_byok(
                 query=query,
                 providers=provider_instances,
                 synthesize_with=synth_model,
+                synthesis_base_url=synthesis_base_url,
                 no_synthesis=no_synthesis,
                 budget_cap_usd=effective_budget,
                 timeout_per_provider=timeout,
                 output=out_path,
                 no_sign=no_sign,
                 settings=settings,
+                sources=sources,
             )
         except RuntimeError as exc:
             progress.stop()

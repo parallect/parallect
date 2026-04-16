@@ -1,0 +1,11 @@
+# Minimal LiteLLM config for integration tests.
+# Points at an Ollama-served llama3.2 (works offline if Ollama is running).
+# Swap in OpenAI / Anthropic / OpenRouter as needed for live tests.
+model_list:
+  - model_name: test-llama
+    litellm_params:
+      model: ollama/llama3.2
+      api_base: http://host.docker.internal:11434
+
+general_settings:
+  master_key: sk-parallect-test
