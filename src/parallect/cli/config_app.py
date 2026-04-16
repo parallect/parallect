@@ -137,6 +137,41 @@ CLOUD_BACKENDS = {"anthropic", "openai", "gemini", "openrouter"}
 # ---------------------------------------------------------------------------
 
 
+class EditPluginModal(ModalScreen[tuple | None]):
+    """Modal for editing or deleting an existing plugin entry."""
+
+    def __init__(self, ptype: str, pname: str | None, path: str) -> None:
+        super().__init__()
+        self.ptype = ptype
+        self.pname = pname
+        self.current_path = path
+
+    def compose(self) -> ComposeResult:
+        display = f"{self.ptype}:{self.pname}" if self.pname else self.ptype
+        with Vertical(id="modal-container"):
+            yield Label(f"Edit: {display}", classes="screen-title")
+            yield Label("Path", classes="form-label")
+            yield Input(value=self.current_path, id="edit-path")
+            with Horizontal(classes="button-bar"):
+                yield Button("Save", variant="primary", id="edit-save")
+                yield Button("Delete", variant="error", id="edit-delete")
+                yield Button("Cancel", id="edit-cancel")
+
+    @on(Button.Pressed, "#edit-save")
+    def _on_save(self) -> None:
+        new_path = self.query_one("#edit-path", Input).value.strip()
+        if new_path:
+            self.dismiss(("edit", self.ptype, self.pname, new_path))
+
+    @on(Button.Pressed, "#edit-delete")
+    def _on_delete(self) -> None:
+        self.dismiss(("delete", self.ptype, self.pname, ""))
+
+    @on(Button.Pressed, "#edit-cancel")
+    def _on_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class AddPluginModal(ModalScreen[dict | None]):
     """Modal for adding a filesystem or obsidian plugin instance."""
 
@@ -412,9 +447,9 @@ class PluginsScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Label("Data Source Plugins", classes="screen-title")
+        yield Label("[dim]Select an entry to edit or delete it.[/dim]")
 
-        with VerticalScroll(classes="form-group"):
-            yield Static(self._format_plugins(), id="plugin-list")
+        yield OptionList(*self._build_entries(), id="plugin-entries")
 
         with Horizontal(classes="button-bar"):
             yield Button("Add filesystem", id="add-fs-btn")
@@ -422,21 +457,74 @@ class PluginsScreen(Screen):
             yield Button("Configure prxhub", id="prxhub-btn")
             yield Button("Back", id="back-btn")
 
-    def _format_plugins(self) -> str:
+    def _build_entries(self) -> list[str]:
         plugins = self._data.get("plugins", {})
         if not plugins:
-            return "(no plugins configured)"
-        lines = []
+            return ["(no plugins configured)"]
+        entries = []
         for pname, pval in plugins.items():
             if isinstance(pval, list):
                 for inst in pval:
-                    lines.append(f"  {pname}:{inst.get('name', '?')} -> {inst.get('path', '?')}")
+                    entries.append(f"{pname}:{inst.get('name', '?')}  →  {inst.get('path', '?')}")
             elif isinstance(pval, dict):
-                lines.append(f"  {pname} -> {pval}")
-        return "\n".join(lines) if lines else "(no plugins configured)"
+                if pname == "prxhub":
+                    entries.append(f"prxhub  →  {pval.get('api_url', 'https://prxhub.com')}")
+                else:
+                    entries.append(f"{pname}  →  {pval}")
+        return entries if entries else ["(no plugins configured)"]
 
     def _refresh_list(self) -> None:
-        self.query_one("#plugin-list", Static).update(self._format_plugins())
+        ol = self.query_one("#plugin-entries", OptionList)
+        ol.clear_options()
+        for entry in self._build_entries():
+            ol.add_option(entry)
+
+    @on(OptionList.OptionSelected, "#plugin-entries")
+    def _on_entry_selected(self, event: OptionList.OptionSelected) -> None:
+        label = str(event.option.prompt)
+        if label.startswith("("):
+            return
+        # Parse "type:name  →  path" back to identify the entry
+        parts = label.split("  →  ", 1)
+        if len(parts) != 2:
+            return
+        spec, path = parts[0].strip(), parts[1].strip()
+        if ":" in spec:
+            ptype, pname = spec.split(":", 1)
+        else:
+            ptype, pname = spec, None
+
+        # Show edit/delete options
+        self.app.push_screen(
+            EditPluginModal(ptype, pname, path),
+            self._on_edit_result,
+        )
+
+    def _on_edit_result(self, result: tuple | None) -> None:
+        if result is None:
+            return
+        action, ptype, pname, new_path = result
+        plugins = self._data.get("plugins", {})
+        if action == "delete":
+            if ptype in plugins:
+                val = plugins[ptype]
+                if isinstance(val, list):
+                    plugins[ptype] = [i for i in val if i.get("name") != pname]
+                    if not plugins[ptype]:
+                        del plugins[ptype]
+                elif isinstance(val, dict):
+                    del plugins[ptype]
+        elif action == "edit":
+            if ptype in plugins:
+                val = plugins[ptype]
+                if isinstance(val, list):
+                    for inst in val:
+                        if inst.get("name") == pname:
+                            inst["path"] = new_path
+                            break
+                elif isinstance(val, dict):
+                    val["path"] = new_path
+        self._refresh_list()
 
     @on(Button.Pressed, "#add-fs-btn")
     def _on_add_fs(self) -> None:
@@ -590,12 +678,12 @@ class ViewConfigScreen(Screen):
 # ---------------------------------------------------------------------------
 
 MENU_ITEMS = [
-    "Synthesis backend",
-    "Embeddings backend",
-    "Provider API keys",
-    "Data source plugins",
-    "Parallect API key",
-    "View current config",
+    "Synthesis backend\n  Which LLM writes your research reports",
+    "Embeddings backend\n  Which model indexes your local files for search",
+    "Provider API keys\n  API keys for BYOK web research (Perplexity, OpenAI, etc.)",
+    "Data source plugins\n  Local directories, Obsidian vaults, prxhub",
+    "Parallect API key\n  Connect to parallect.ai for SaaS-mode research",
+    "View current config\n  See all settings at a glance",
 ]
 
 
