@@ -4356,7 +4356,7 @@ wheels = [
 
 [[package]]
 name = "parallect"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
@@ -4398,7 +4398,7 @@ requires-dist = [
     { name = "local-deep-research", marker = "extra == 'ldr'", specifier = ">=0.1.0" },
     { name = "openai", marker = "extra == 'all'", specifier = ">=1.0" },
     { name = "platformdirs", specifier = ">=4.0" },
-    { name = "prx-spec", specifier = ">=0.1.0" },
+    { name = "prx-spec", specifier = ">=0.2.0" },
     { name = "pydantic", specifier = ">=2.0,<3.0" },
     { name = "pydantic-settings", specifier = ">=2.0" },
     { name = "pyyaml", specifier = ">=6.0" },
