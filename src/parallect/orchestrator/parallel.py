@@ -123,7 +123,7 @@ class ProviderOutcome:
 async def fan_out(
     query: str,
     providers: list[AsyncResearchProvider],
-    timeout_per_provider: float = 120.0,
+    timeout_per_provider: float = 900.0,
 ) -> list[ProviderOutcome]:
     """Fan out query to all providers in parallel.
 
@@ -158,7 +158,7 @@ async def research(
     synthesis_base_url: str | None = None,
     extract_claims_flag: bool = True,
     budget_cap_usd: float | None = None,
-    timeout_per_provider: float = 120.0,
+    timeout_per_provider: float = 900.0,
     output: str | Path | None = None,
     no_synthesis: bool = False,
     parent_bundle_id: str | None = None,
@@ -167,6 +167,8 @@ async def research(
     settings: object | None = None,
     sources: str | None = None,
     on_status: Callable[[str], None] | None = None,
+    pre_computed_outcomes: list[ProviderOutcome] | None = None,
+    pre_computed_plugin_outcomes: list | None = None,
 ) -> BundleData:
     """High-level research: fan out, collect, optionally synthesize, write .prx.
 
@@ -221,17 +223,27 @@ async def research(
     # plugin never blocks the web fan-out (and vice-versa).
     from parallect.orchestrator.plugin_sources import run_plugin_sources
 
-    fan_out_count = len(providers) + (1 if sources else 0)
-    _status(f"Fanning out to {fan_out_count} provider{'s' if fan_out_count != 1 else ''}...")
+    # When the caller has already fanned out (e.g. the iterative research
+    # loop did its own planner→executor sequence), skip the fan-out and
+    # build the bundle from the pre-computed outcomes. This keeps all the
+    # bundle-assembly, signing, and writing logic in one place instead of
+    # forcing every caller to duplicate it.
+    if pre_computed_outcomes is not None:
+        _status("Assembling bundle from pre-computed outcomes...")
+        outcomes = list(pre_computed_outcomes)
+        plugin_outcomes = list(pre_computed_plugin_outcomes or [])
+    else:
+        fan_out_count = len(providers) + (1 if sources else 0)
+        _status(f"Fanning out to {fan_out_count} provider{'s' if fan_out_count != 1 else ''}...")
 
-    provider_task = asyncio.create_task(
-        fan_out(effective_query, providers, timeout_per_provider)
-    )
-    plugins_task = asyncio.create_task(
-        run_plugin_sources(effective_query, sources, settings=settings)
-    )
-    outcomes = await provider_task
-    plugin_outcomes = await plugins_task
+        provider_task = asyncio.create_task(
+            fan_out(effective_query, providers, timeout_per_provider)
+        )
+        plugins_task = asyncio.create_task(
+            run_plugin_sources(effective_query, sources, settings=settings)
+        )
+        outcomes = await provider_task
+        plugin_outcomes = await plugins_task
 
     # One-line summary per provider outcome so the user sees real progress
     # and not just a static "Running research..." spinner.

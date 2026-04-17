@@ -97,7 +97,7 @@ async def run_loop(
     synthesis_base_url: str | None = None,
     sources: str | None = None,
     settings: object | None = None,
-    timeout: float = 120.0,
+    timeout: float = 900.0,
     on_status: Callable[[str], None] | None = None,
 ) -> ResearchLoopResult:
     """Run the iterative research loop.

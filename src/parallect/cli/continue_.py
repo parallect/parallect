@@ -21,6 +21,12 @@ def continue_cmd(
         None, "--providers", "-p", help="Comma-separated provider names"
     ),
     output: str | None = typer.Option(None, "--output", "-o", help="Output path"),
+    timeout: float = typer.Option(
+        900.0, "--timeout",
+        help="Per-provider timeout in seconds. Default 900s (15 min) matches "
+             "`parallect research` so follow-on runs behave the same way as "
+             "the initial query.",
+    ),
 ) -> None:
     """Run follow-on research linked to a parent bundle."""
     from prx_spec import read_bundle
@@ -58,6 +64,7 @@ def continue_cmd(
         parent_context=parent_context,
         providers_str=providers,
         output=output,
+        timeout=timeout,
     ))
 
 
@@ -144,13 +151,16 @@ async def _continue_async(
     parent_context: str,
     providers_str: str | None,
     output: str | None,
+    timeout: float = 900.0,
 ) -> None:
     from parallect.cli.research import _resolve_providers
     from parallect.config_mod.settings import ParallectSettings
     from parallect.orchestrator.parallel import research
 
     settings = ParallectSettings.load()
-    provider_instances = _resolve_providers(providers_str, False, settings)
+    provider_instances = _resolve_providers(
+        providers_str, False, settings, timeout=timeout,
+    )
 
     if not provider_instances:
         console.print(
@@ -173,6 +183,7 @@ async def _continue_async(
         parent_bundle_id=parent_bundle_id,
         parent_context=parent_context,
         output=output,
+        timeout_per_provider=timeout,
     )
 
     console.print(f"\n[green]Bundle created:[/green] {bundle.manifest.id}")

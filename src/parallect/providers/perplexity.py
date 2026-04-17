@@ -23,7 +23,7 @@ class PerplexityProvider:
         self,
         api_key: str,
         model: str = DEFAULT_MODEL,
-        timeout: float = 120.0,
+        timeout: float = 900.0,
     ) -> None:
         self.api_key = api_key
         self.model = model

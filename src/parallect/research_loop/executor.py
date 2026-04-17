@@ -51,7 +51,7 @@ async def execute(
     *,
     sources_raw: str | None = None,
     settings: object | None = None,
-    timeout: float = 120.0,
+    timeout: float = 900.0,
 ) -> ExecutorResult:
     """Execute all sub-queries against providers and plugins in parallel.
 
