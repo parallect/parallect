@@ -571,6 +571,11 @@ async def _run_byok(
 
         from parallect.orchestrator.parallel import research
 
+        def _update_status(msg: str) -> None:
+            # Rich's Progress is thread-safe; the orchestrator runs in the
+            # same asyncio loop, so direct update is fine.
+            progress.update(task, description=msg)
+
         try:
             bundle = await research(
                 query=query,
@@ -584,6 +589,7 @@ async def _run_byok(
                 no_sign=no_sign,
                 settings=settings,
                 sources=sources,
+                on_status=_update_status,
             )
         except RuntimeError as exc:
             progress.stop()
