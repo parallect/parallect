@@ -479,6 +479,22 @@ async def research(
 
     run_duration = round(_time.monotonic() - run_start, 2)
 
+    # Build a provider-level evidence graph linking claims → sources.
+    # This is a cheap over-approximation: for each claim, for each provider
+    # that supports it, link to every source that provider cited. Semantic
+    # matching between claim text and source content is a separate effort.
+    evidence_graph = None
+    if claims_file is not None and sources_registry is not None:
+        try:
+            from parallect.synthesis.evidence import build_evidence_graph
+
+            evidence_graph = build_evidence_graph(claims_file, sources_registry)
+        except Exception as exc:
+            import logging
+            logging.getLogger("parallect").warning(
+                "Evidence graph construction failed: %s", exc
+            )
+
     manifest = Manifest(
         spec_version="1.1",
         id=bundle_id,
@@ -490,7 +506,7 @@ async def research(
         has_synthesis=has_synthesis,
         has_claims=claims_file is not None,
         has_sources=sources_registry is not None,
-        has_evidence_graph=False,
+        has_evidence_graph=evidence_graph is not None,
         has_follow_ons=bool(follow_ons),
         total_cost_usd=round(total_cost, 4) if total_cost else None,
         total_duration_seconds=run_duration,
@@ -506,6 +522,7 @@ async def research(
         claims=claims_file,
         follow_ons=follow_ons,
         sources=sources_registry,
+        evidence_graph=evidence_graph,
     )
 
     # Hook: post_bundle
