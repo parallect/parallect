@@ -453,7 +453,8 @@ class TestResolveProvidersTimeout:
     def test_default_timeout_is_600_when_none(self):
         """Covers the case where the CLI default (120s) does NOT override —
         previously Perplexity's own 120s default cut off sonar-deep-research
-        runs that legitimately take 2–5 minutes."""
+        runs that legitimately take 2–5 minutes. Default bumped again to 900s
+        (15 min) to cover local 31B models + long-running web providers."""
         from parallect.cli.research import _resolve_providers
 
         instances = _resolve_providers(
@@ -462,7 +463,7 @@ class TestResolveProvidersTimeout:
             settings=self._fake_settings(),
             timeout=None,
         )
-        assert instances[0].timeout == 600.0
+        assert instances[0].timeout == 900.0
 
     def test_zero_timeout_falls_back_to_default(self):
         from parallect.cli.research import _resolve_providers
@@ -473,4 +474,4 @@ class TestResolveProvidersTimeout:
             settings=self._fake_settings(),
             timeout=0.0,
         )
-        assert instances[0].timeout == 600.0
+        assert instances[0].timeout == 900.0

@@ -11,7 +11,7 @@ class TestSettings:
         assert settings.providers == ["perplexity", "gemini", "openai"]
         assert settings.synthesize_with == "anthropic"
         assert settings.budget_cap_usd == 2.00
-        assert settings.timeout_per_provider == 120.0
+        assert settings.timeout_per_provider == 900.0
         assert settings.auto_sign is True
 
     def test_override_via_init(self):

@@ -64,7 +64,7 @@ async def _extract_anthropic(prompt: str, api_key: str | None = None) -> dict:
     if not key:
         raise ValueError("Anthropic API key required for claim extraction")
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    async with httpx.AsyncClient(timeout=900.0) as client:
         response = await client.post(
             "https://api.anthropic.com/v1/messages",
             headers={
@@ -90,7 +90,7 @@ async def _extract_openai(prompt: str, model: str, api_key: str | None = None) -
     """Extract claims using OpenAI-compatible API."""
     key = api_key or os.environ.get("OPENAI_API_KEY", "")
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    async with httpx.AsyncClient(timeout=900.0) as client:
         response = await client.post(
             "https://api.openai.com/v1/chat/completions",
             headers={

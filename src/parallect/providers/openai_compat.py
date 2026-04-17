@@ -26,7 +26,7 @@ class OpenAICompatibleProvider:
         model: str,
         api_key: str = "not-needed",
         system_prompt: str | None = None,
-        timeout: float = 120.0,
+        timeout: float = 900.0,
     ) -> None:
         self._name = name
         self.base_url = base_url.rstrip("/")

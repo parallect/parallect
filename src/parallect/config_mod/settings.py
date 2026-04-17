@@ -55,7 +55,7 @@ class ParallectSettings(BaseSettings):
     synthesize_with: str = "anthropic"
     budget_cap_usd: float = 2.00
     output_dir: str = "."
-    timeout_per_provider: float = 120.0
+    timeout_per_provider: float = 900.0
 
     # Parallect API (for enhance + SaaS research)
     parallect_api_key: str = ""

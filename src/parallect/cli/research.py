@@ -153,7 +153,12 @@ def research_cmd(
         None, "--output-dir", help="Output directory for .prx file"
     ),
     timeout: float = typer.Option(
-        120.0, "--timeout", help="Per-provider timeout (BYOK) / request timeout (SaaS) in seconds"
+        900.0, "--timeout",
+        help="Per-provider timeout in seconds (BYOK) / request timeout (SaaS). "
+             "Default 900s (15 min) accommodates local 31B models, Perplexity "
+             "sonar-deep-research, and long-running web providers without "
+             "cutting off legitimate completions. Drop to 120s for fast-fail "
+             "smoke testing of frontier APIs.",
     ),
     poll_interval: float = typer.Option(
         15.0, "--poll-interval", help="[SaaS] Seconds between status polls"
@@ -637,7 +642,7 @@ def _resolve_providers(
     from parallect.providers.openai_dr import OpenAIDRProvider
     from parallect.providers.perplexity import PerplexityProvider
 
-    t = timeout if (timeout and timeout > 0) else 600.0
+    t = timeout if (timeout and timeout > 0) else 900.0
 
     if local:
         return [OllamaProvider(model=settings.ollama_default_model, host=settings.ollama_host)]
@@ -741,6 +746,36 @@ async def _run_byok_iterative(
     console.print(f"  Cost: ${result.total_cost_usd:.4f}")
     if result.synthesis:
         console.print(f"  Synthesis: yes ({result.synthesis.model})")
+
+    # Build a .prx bundle from the loop's accumulated results so users get
+    # the same output shape regardless of iterative vs non-iterative mode.
+    # The iterative loop already ran synthesis (if enabled), so we pass
+    # no_synthesis=True to skip re-doing it; claims + follow-ons + source
+    # registry + evidence graph are computed here from the provider reports
+    # the loop collected.
+    if out_path and result.all_results:
+        from parallect.orchestrator.parallel import ProviderOutcome, research
+
+        pre_outcomes = [
+            ProviderOutcome(provider=r.provider, result=r)
+            for r in result.all_results
+        ]
+        bundle = await research(
+            query=query,
+            providers=[],  # unused because we pass pre_computed_outcomes
+            synthesize_with=None,  # loop already did synthesis (or skipped it)
+            no_synthesis=True,
+            output=out_path,
+            no_sign=no_sign,
+            settings=settings,
+            sources=None,  # loop already gathered plugin content into all_results
+            pre_computed_outcomes=pre_outcomes,
+        )
+        console.print(f"\nBundle created: {bundle.manifest.id}")
+        console.print(f"  Providers: {', '.join(bundle.manifest.providers_used)}")
+        if bundle.attestations:
+            console.print(f"  Signed: yes ({len(bundle.attestations)} attestation(s))")
+        console.print(f"  Saved to: {out_path}")
 
     if out_path:
         import json
