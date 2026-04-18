@@ -27,7 +27,7 @@ from parallect.providers.base import AsyncResearchProvider, ResearchProvider
 from parallect.synthesis.concat import concatenate
 from parallect.synthesis.llm import synthesize
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "AsyncResearchProvider",
