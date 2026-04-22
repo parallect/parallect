@@ -131,7 +131,7 @@ Hooks from all sources run in registration order.
 The Local Deep Research integration is a built-in plugin:
 
 ```bash
-pip install "parallect[ldr]"
+pip install "parallect-cli[ldr]"
 parallect research "my query" -p ldr
 ```
 

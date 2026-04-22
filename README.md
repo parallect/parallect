@@ -102,12 +102,12 @@ Run `parallect <command> --help` for full flags.
 | Grok | `grok-3` | `grok-4` | `PARALLECT_XAI_API_KEY` |
 | Ollama | `llama3.2` | — | (local, no key) |
 | LM Studio | `default` | — | (local, no key) |
-| LDR | `llama3.2` | — | (local; `pip install "parallect[ldr]"`) |
+| LDR | `llama3.2` | — | (local; `pip install "parallect-cli[ldr]"`) |
 
 Install optional provider SDKs with the `all` extra:
 
 ```bash
-pip install "parallect[all]"
+pip install "parallect-cli[all]"
 ```
 
 ## Configuration
