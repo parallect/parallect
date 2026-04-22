@@ -45,21 +45,49 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
 
-      - name: Verify tag matches package version
+      - name: Verify tag matches both package versions
         id: version
         run: |
           TAG_VERSION="${GITHUB_REF#refs/tags/v}"
-          PKG_VERSION=$(uv run python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
-          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "::error::Tag v$TAG_VERSION does not match pyproject.toml version $PKG_VERSION"
+          CLI_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          SHIM_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('packages/parallect-legacy/pyproject.toml','rb'))['project']['version'])")
+          SHIM_PIN=$(python3 -c "import tomllib; deps=tomllib.load(open('packages/parallect-legacy/pyproject.toml','rb'))['project']['dependencies']; print([d for d in deps if d.startswith('parallect-cli')][0])")
+
+          echo "tag=$TAG_VERSION"
+          echo "parallect-cli=$CLI_VERSION"
+          echo "parallect (legacy shim)=$SHIM_VERSION"
+          echo "shim pin=$SHIM_PIN"
+
+          if [ "$TAG_VERSION" != "$CLI_VERSION" ]; then
+            echo "::error::Tag v$TAG_VERSION does not match parallect-cli pyproject.toml version $CLI_VERSION"
+            exit 1
+          fi
+          if [ "$TAG_VERSION" != "$SHIM_VERSION" ]; then
+            echo "::error::Tag v$TAG_VERSION does not match parallect legacy shim pyproject.toml version $SHIM_VERSION"
+            exit 1
+          fi
+          EXPECTED_PIN="parallect-cli==$TAG_VERSION"
+          if [ "$SHIM_PIN" != "$EXPECTED_PIN" ]; then
+            echo "::error::Legacy shim dependency pin is '$SHIM_PIN' but expected '$EXPECTED_PIN'. Update packages/parallect-legacy/pyproject.toml before tagging."
             exit 1
           fi
           echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Build package
-        run: uv build
+      - name: Build parallect-cli (canonical)
+        run: uv build --out-dir dist
+
+      - name: Build parallect (legacy compatibility shim)
+        run: uv build --out-dir ../../dist
+        working-directory: packages/parallect-legacy
+
+      - name: List build artifacts
+        run: ls -la dist/
 
       - name: Publish to PyPI
+        # Both `parallect-cli` and `parallect` PyPI projects must have Trusted
+        # Publishing configured against this workflow (environment: pypi).
+        # The action uploads every file in dist/; PyPI routes each wheel/sdist
+        # to its project based on the package metadata inside the file.
         uses: pypa/gh-action-pypi-publish@release/v1
 
       - name: Create GitHub Release
@@ -68,7 +96,20 @@ jobs:
           generate_release_notes: true
           files: dist/*
 
-      - name: Notify Homebrew tap
+      - name: Notify Homebrew tap (parallect-cli)
+        # The canonical formula tracks `parallect-cli` on PyPI going forward.
+        # The tap is expected to contain Formula/parallect-cli.rb.
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          repository: parallect/homebrew-tap
+          event-type: pypi-release
+          client-payload: |
+            {"package": "parallect-cli", "version": "${{ steps.version.outputs.version }}"}
+
+      - name: Notify Homebrew tap (parallect legacy)
+        # Also refresh the legacy `parallect` formula so `brew install parallect`
+        # keeps working. Remove this step once the legacy formula is retired.
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}

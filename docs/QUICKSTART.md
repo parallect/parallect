@@ -5,14 +5,18 @@ Get multi-provider AI research running in under 5 minutes.
 ## Installation
 
 ```bash
-pip install parallect
+pip install parallect-cli
 ```
 
 With all provider SDKs:
 
 ```bash
-pip install "parallect[all]"
+pip install "parallect-cli[all]"
 ```
+
+> The legacy `pip install parallect` also still works — it transparently
+> pulls in `parallect-cli` and emits a one-time `DeprecationWarning` so
+> you know to update your install command.
 
 ## Configuration
 

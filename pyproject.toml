@@ -1,6 +1,6 @@
 [project]
-name = "parallect"
-version = "0.2.0"
+name = "parallect-cli"
+version = "0.3.0"
 description = "Open-source multi-provider AI deep research CLI (BYOK)"
 readme = "README.md"
 license = "MIT"

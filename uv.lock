@@ -4355,8 +4355,8 @@ wheels = [
 ]
 
 [[package]]
-name = "parallect"
-version = "0.2.0"
+name = "parallect-cli"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

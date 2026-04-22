@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.0 (2026-04-22)
+
+**Distribution rename — additive, backward-compatible.**
+
+- The canonical PyPI distribution is now **`parallect-cli`**. New installs
+  should use `pip install parallect-cli`.
+- The legacy `parallect` PyPI distribution is kept alive as a compatibility
+  shim (depends on `parallect-cli==0.3.0`) and emits a `DeprecationWarning`
+  on `import parallect` to nudge users toward the new name. `pip install
+  parallect` continues to work.
+- **No user-visible changes** to any of: the Python import name
+  (`import parallect`), the installed CLI command (`parallect …`), the
+  user configuration directory (`~/.config/parallect/`), the public
+  library API, or the plugin hook entry-point group.
+- The `parallect` GitHub repository name is unchanged. Both wheels are
+  built from this repo: the canonical one from the repo root, the shim
+  from `packages/parallect-legacy/`.
+- Context: https://github.com/parallect/prx-ecosystem/issues/3
+
 ## 0.2.0 (2026-04-17)
 
 - Manifest v1.1 alignment: orchestrator emits `spec_version: "1.1"`, `provider_breakdown`, `total_duration`, `has_attestations`

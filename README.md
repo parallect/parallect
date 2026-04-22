@@ -36,16 +36,25 @@ $ parallect research "What are the leading theories on dark matter?"
 From PyPI:
 
 ```bash
-pip install parallect
+pip install parallect-cli
 ```
 
 Or with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv tool install parallect
+uv tool install parallect-cli
 ```
 
 Requires Python 3.10+.
+
+> **Rename note (0.3.0):** the canonical PyPI distribution is now
+> `parallect-cli`. The legacy `parallect` name still works as a
+> compatibility shim (`pip install parallect` transparently installs
+> `parallect-cli` and emits a `DeprecationWarning` on import). The Python
+> import name (`import parallect`), the CLI command (`parallect …`), and
+> the config directory (`~/.config/parallect/`) are unchanged. See
+> [parallect/prx-ecosystem#3](https://github.com/parallect/prx-ecosystem/issues/3)
+> for context.
 
 ## Quick start
 

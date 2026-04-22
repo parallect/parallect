@@ -1,7 +1,7 @@
 """Local Deep Research (LDR) integration plugin.
 
 Wraps the local-deep-research Python package as a parallect provider.
-Install with: pip install parallect[ldr]
+Install with: pip install parallect-cli[ldr]
 """
 
 from __future__ import annotations
